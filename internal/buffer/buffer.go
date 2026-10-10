@@ -270,6 +270,68 @@ func (b *Buffer) DeleteLine() {
 	b.Modified = true
 }
 
+// MoveLinesUp mueve un rango de líneas [startRow, endRow] hacia arriba intercambiándolo con la línea anterior.
+func (b *Buffer) MoveLinesUp(startRow, endRow int) bool {
+	if startRow <= 0 || startRow > endRow || endRow >= len(b.Lines) {
+		return false
+	}
+
+	b.recordSnapshot()
+	prevLine := b.Lines[startRow-1]
+	for i := startRow; i <= endRow; i++ {
+		b.Lines[i-1] = b.Lines[i]
+	}
+	b.Lines[endRow] = prevLine
+
+	b.Modified = true
+	return true
+}
+
+// MoveLinesDown mueve un rango de líneas [startRow, endRow] hacia abajo intercambiándolo con la línea siguiente.
+func (b *Buffer) MoveLinesDown(startRow, endRow int) bool {
+	if endRow >= len(b.Lines)-1 || startRow > endRow || startRow < 0 {
+		return false
+	}
+
+	b.recordSnapshot()
+	nextLine := b.Lines[endRow+1]
+	for i := endRow; i >= startRow; i-- {
+		b.Lines[i+1] = b.Lines[i]
+	}
+	b.Lines[startRow] = nextLine
+
+	b.Modified = true
+	return true
+}
+
+// MoveLineUp mueve la línea actual hacia arriba una posición.
+func (b *Buffer) MoveLineUp() bool {
+	b.ClampCursor()
+	if b.CursorRow <= 0 {
+		return false
+	}
+	if b.MoveLinesUp(b.CursorRow, b.CursorRow) {
+		b.CursorRow--
+		b.ClampCursor()
+		return true
+	}
+	return false
+}
+
+// MoveLineDown mueve la línea actual hacia abajo una posición.
+func (b *Buffer) MoveLineDown() bool {
+	b.ClampCursor()
+	if b.CursorRow >= len(b.Lines)-1 {
+		return false
+	}
+	if b.MoveLinesDown(b.CursorRow, b.CursorRow) {
+		b.CursorRow++
+		b.ClampCursor()
+		return true
+	}
+	return false
+}
+
 // ClampCursor asegura que CursorRow y CursorCol se mantengan dentro de límites válidos.
 func (b *Buffer) ClampCursor() {
 	if b.CursorRow < 0 {

@@ -117,3 +117,57 @@ func TestBufferSaveAndLoad(t *testing.T) {
 		t.Errorf("contenido inesperado: %v", loaded.Lines)
 	}
 }
+
+func TestMoveLineUpDown(t *testing.T) {
+	b := NewEmptyBuffer()
+	b.Lines = []string{"A", "B", "C", "D"}
+	b.CursorRow = 2 // Sobre "C"
+
+	// Mover "C" hacia arriba
+	if !b.MoveLineUp() {
+		t.Fatalf("MoveLineUp debería retornar true")
+	}
+	if b.CursorRow != 1 {
+		t.Errorf("CursorRow esperado 1 tras mover hacia arriba, obtenido %d", b.CursorRow)
+	}
+	expected := []string{"A", "C", "B", "D"}
+	for i, line := range expected {
+		if b.Lines[i] != line {
+			t.Errorf("línea %d esperada '%s', obtenida '%s'", i, line, b.Lines[i])
+		}
+	}
+
+	// Mover "C" hacia abajo
+	if !b.MoveLineDown() {
+		t.Fatalf("MoveLineDown debería retornar true")
+	}
+	if b.CursorRow != 2 {
+		t.Errorf("CursorRow esperado 2 tras mover hacia abajo, obtenido %d", b.CursorRow)
+	}
+	expected2 := []string{"A", "B", "C", "D"}
+	for i, line := range expected2 {
+		if b.Lines[i] != line {
+			t.Errorf("línea %d esperada '%s', obtenida '%s'", i, line, b.Lines[i])
+		}
+	}
+
+	// Mover rango ["B", "C"] hacia abajo
+	if !b.MoveLinesDown(1, 2) {
+		t.Fatalf("MoveLinesDown rango debería retornar true")
+	}
+	expectedRangeDown := []string{"A", "D", "B", "C"}
+	for i, line := range expectedRangeDown {
+		if b.Lines[i] != line {
+			t.Errorf("línea %d esperada '%s', obtenida '%s'", i, line, b.Lines[i])
+		}
+	}
+
+	// Deshacer con Undo
+	b.Undo()
+	for i, line := range expected2 {
+		if b.Lines[i] != line {
+			t.Errorf("después de Undo línea %d esperada '%s', obtenida '%s'", i, line, b.Lines[i])
+		}
+	}
+}
+

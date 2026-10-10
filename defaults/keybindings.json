@@ -30,5 +30,9 @@
   "Ctrl+V": "selection:paste",
   "Ctrl+D": "line:duplicate",
   "Ctrl+K": "line:delete",
+  "Alt+Up": "line:move_up",
+  "Alt+Down": "line:move_down",
+  "Ctrl+Up": "line:move_up",
+  "Ctrl+Down": "line:move_down",
   "F1": "help:docs"
 }

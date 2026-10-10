@@ -32,6 +32,8 @@ Bienvenido a **edi**, un editor de texto para consola (TUI) rápido, portable y 
 - `Ctrl+Y` : **Rehacer** (Redo multinivel).
 - `Ctrl+D` : **Duplicar** línea actual.
 - `Ctrl+K` : **Eliminar** línea actual.
+- `Alt+Up` / `Ctrl+Up` : **Mover línea** hacia arriba (o selección completa).
+- `Alt+Down` / `Ctrl+Down` : **Mover línea** hacia abajo (o selección completa).
 - `Tab` : Insertar tabulación o espacios según configuración.
 
 ### Navegación en el Explorador Lateral (`Ctrl+B`)

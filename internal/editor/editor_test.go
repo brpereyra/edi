@@ -300,3 +300,55 @@ func TestSidebarCreateNewFileWithKey(t *testing.T) {
 	}
 }
 
+func TestEditorMoveLine(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("error inicializando pantalla: %v", err)
+	}
+	defer screen.Fini()
+
+	buf := buffer.NewEmptyBuffer()
+	buf.Lines = []string{"linea 1", "linea 2", "linea 3"}
+	buf.CursorRow = 1 // linea 2
+	buf.CursorCol = 2
+
+	cfg := config.DefaultConfig()
+	ed, err := NewEditor(screen, buf, &cfg)
+	if err != nil {
+		t.Fatalf("error creando editor: %v", err)
+	}
+
+	// Mover linea 2 hacia arriba
+	ed.executeAction("line:move_up")
+	if ed.Buffer.Lines[0] != "linea 2" || ed.Buffer.Lines[1] != "linea 1" {
+		t.Errorf("falló line:move_up, contenido: %v", ed.Buffer.Lines)
+	}
+	if ed.Buffer.CursorRow != 0 {
+		t.Errorf("CursorRow esperado 0 tras mover arriba, obtenido %d", ed.Buffer.CursorRow)
+	}
+
+	// Mover linea 2 hacia abajo
+	ed.executeAction("line:move_down")
+	if ed.Buffer.Lines[0] != "linea 1" || ed.Buffer.Lines[1] != "linea 2" {
+		t.Errorf("falló line:move_down, contenido: %v", ed.Buffer.Lines)
+	}
+	if ed.Buffer.CursorRow != 1 {
+		t.Errorf("CursorRow esperado 1 tras mover abajo, obtenido %d", ed.Buffer.CursorRow)
+	}
+
+	// Probar con selección multi-línea
+	ed.Selecting = true
+	ed.SelectAnchorRow = 0
+	ed.Buffer.CursorRow = 1 // Seleccionando lineas 0 y 1 ("linea 1", "linea 2")
+	ed.executeAction("line:move_down")
+
+	// Ahora linea 3 debe ser la primera, y linea 1 y 2 las siguientes
+	if ed.Buffer.Lines[0] != "linea 3" || ed.Buffer.Lines[1] != "linea 1" || ed.Buffer.Lines[2] != "linea 2" {
+		t.Errorf("falló line:move_down con selección, contenido: %v", ed.Buffer.Lines)
+	}
+	if ed.SelectAnchorRow != 1 || ed.Buffer.CursorRow != 2 {
+		t.Errorf("esperado anchor 1 y cursor 2, obtenido anchor %d y cursor %d", ed.SelectAnchorRow, ed.Buffer.CursorRow)
+	}
+}
+
+

@@ -156,6 +156,8 @@ func buildDefaultPalette() []PaletteItem {
 		{Title: "Rehacer (Redo)", Action: "buffer:redo", Description: "Ctrl+Y"},
 		{Title: "Duplicar línea", Action: "line:duplicate", Description: "Ctrl+D"},
 		{Title: "Eliminar línea", Action: "line:delete", Description: "Ctrl+K"},
+		{Title: "Mover línea arriba", Action: "line:move_up", Description: "Alt+Up / Ctrl+Up"},
+		{Title: "Mover línea abajo", Action: "line:move_down", Description: "Alt+Down / Ctrl+Down"},
 		{Title: "Cambiar tema: Dracula", Action: "theme:dracula", Description: "Tema oscuro clásico"},
 		{Title: "Cambiar tema: Monokai", Action: "theme:monokai", Description: "Tema oscuro retro"},
 		{Title: "Alternar números de línea", Action: "toggle:line_numbers", Description: "Mostrar/Ocultar"},
@@ -1535,6 +1537,34 @@ func (e *Editor) executeAction(action string) {
 		e.Buffer.DuplicateLine()
 	case "line:delete":
 		e.Buffer.DeleteLine()
+	case "line:move_up":
+		if e.Selecting {
+			startRow, endRow := e.SelectAnchorRow, e.Buffer.CursorRow
+			if startRow > endRow {
+				startRow, endRow = endRow, startRow
+			}
+			if e.Buffer.MoveLinesUp(startRow, endRow) {
+				e.SelectAnchorRow--
+				e.Buffer.CursorRow--
+				e.Buffer.ClampCursor()
+			}
+		} else {
+			e.Buffer.MoveLineUp()
+		}
+	case "line:move_down":
+		if e.Selecting {
+			startRow, endRow := e.SelectAnchorRow, e.Buffer.CursorRow
+			if startRow > endRow {
+				startRow, endRow = endRow, startRow
+			}
+			if e.Buffer.MoveLinesDown(startRow, endRow) {
+				e.SelectAnchorRow++
+				e.Buffer.CursorRow++
+				e.Buffer.ClampCursor()
+			}
+		} else {
+			e.Buffer.MoveLineDown()
+		}
 	case "theme:dracula":
 		if th, err := theme.LoadTheme("dracula"); err == nil {
 			e.Theme = th
@@ -1879,6 +1909,20 @@ func keyToString(ev *tcell.EventKey) string {
 	case tcell.KeyRight:
 		if ev.Modifiers()&tcell.ModAlt != 0 {
 			return "Alt+Right"
+		}
+	case tcell.KeyUp:
+		if ev.Modifiers()&tcell.ModAlt != 0 {
+			return "Alt+Up"
+		}
+		if ev.Modifiers()&tcell.ModCtrl != 0 {
+			return "Ctrl+Up"
+		}
+	case tcell.KeyDown:
+		if ev.Modifiers()&tcell.ModAlt != 0 {
+			return "Alt+Down"
+		}
+		if ev.Modifiers()&tcell.ModCtrl != 0 {
+			return "Ctrl+Down"
 		}
 	case tcell.KeyPgUp:
 		if ev.Modifiers()&tcell.ModCtrl != 0 {
