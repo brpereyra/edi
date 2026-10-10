@@ -7,6 +7,7 @@
   "Ctrl+G": "buffer:goto_line",
   "Ctrl+P": "palette:open",
   "Ctrl+O": "file:find",
+  "Ctrl+B": "view:toggle_tree",
   "Ctrl+N": "buffer:new",
   "Ctrl+W": "buffer:close",
   "Ctrl+Tab": "buffer:next",

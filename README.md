@@ -11,6 +11,8 @@ Un editor de texto en consola (TUI) moderno, rápido, altamente personalizable y
 - 🎨 **Paleta TrueColor (24-bit)**: Soporte completo de temas personalizados (`~/.edi-config/themes/*.json`) con Drácula y Monokai incluidos de fábrica.
 - 🔍 **Resaltado de sintaxis declarativo**: Agrega soporte para cualquier lenguaje simplemente colocando un archivo `.json` en `~/.edi-config/syntax/`.
 - ⌨️ **Atajos de teclado configurables**: Mapeo completo en `~/.edi-config/keybindings.json` (soporta formato JSONC con comentarios `//`).
+- 🌳 **Explorador de Archivos en Panel Lateral (`Ctrl+B`)**: Árbol jerárquico interactivo con carpetas expandibles (`▸`/`▾`), navegación con flechas y apertura directa en pestañas.
+- 📁 **Apertura de Carpetas CLI (`edi .`)**: Abre un proyecto completo directamente desde la terminal abriendo el explorador lateral.
 - 🧭 **Paleta de Comandos Modal (`Ctrl+P`)**: Ventana flotante interactiva con navegación `↑`/`↓`, búsqueda difusa y cambio de temas en caliente.
 - 📂 **Buscador Rápido de Archivos (`Ctrl+O`)**: Selector difuso instantáneo que descubre archivos en el proyecto ignorando `.git` o dependencias.
 - 📑 **Pestañas y Múltiples Buffers (`Ctrl+N`, `Ctrl+W`, `Ctrl+Tab`)**: Barra superior visual con soporte para múltiples archivos simultáneos e indicador de estado `*`.
@@ -59,6 +61,7 @@ Para inicializar automáticamente esta estructura en tu máquina:
 | :--- | :--- |
 | `Ctrl+P` | Abrir la Paleta de Comandos (Modal flotante) |
 | `Ctrl+O` | Buscador rápido de archivos del proyecto |
+| `Ctrl+B` | Alternar Explorador de archivos (Panel lateral) |
 | `Ctrl+S` | Guardar archivo (ejecuta formateadores si existen) |
 | `Ctrl+N` | Abrir nueva pestaña vacía |
 | `Ctrl+W` | Cerrar pestaña activa (con advertencia si no está guardada) |

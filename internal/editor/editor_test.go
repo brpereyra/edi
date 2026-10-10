@@ -162,3 +162,35 @@ func TestFileFinderScanAndFilter(t *testing.T) {
 		t.Errorf("se esperaba encontrar 'editor.go' en el directorio del paquete")
 	}
 }
+
+func TestEditorSidebarAndOpenFolder(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("error inicializando pantalla: %v", err)
+	}
+	defer screen.Fini()
+
+	buf := buffer.NewEmptyBuffer()
+	cfg := config.DefaultConfig()
+	ed, err := NewEditor(screen, buf, &cfg)
+	if err != nil {
+		t.Fatalf("error creando editor: %v", err)
+	}
+
+	// Abrir carpeta temporal
+	tmpDir := t.TempDir()
+	ed.OpenFolder(tmpDir)
+
+	if !ed.SidebarOpen {
+		t.Errorf("se esperaba SidebarOpen = true tras OpenFolder")
+	}
+	if !ed.SidebarFocus {
+		t.Errorf("se esperaba SidebarFocus = true tras OpenFolder")
+	}
+
+	// Alternar con Ctrl+B (view:toggle_tree)
+	ed.executeAction("view:toggle_tree")
+	if ed.SidebarOpen {
+		t.Errorf("se esperaba SidebarOpen = false tras toggle")
+	}
+}

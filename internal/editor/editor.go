@@ -12,6 +12,7 @@ import (
 	"edi/internal/plugin"
 	"edi/internal/syntax"
 	"edi/internal/theme"
+	"edi/internal/tree"
 
 	"github.com/gdamore/tcell/v2"
 )
@@ -35,7 +36,7 @@ type PaletteItem struct {
 	Description string
 }
 
-// Editor representa la sesión activa del editor de texto con soporte multibuffer y modales.
+// Editor representa la sesión activa del editor de texto con soporte multibuffer, modales y explorador.
 type Editor struct {
 	Screen          tcell.Screen
 	Buffers         []*buffer.Buffer
@@ -52,6 +53,12 @@ type Editor struct {
 	StatusMessage string
 	StatusExpires time.Time
 	QuitWarned    bool
+
+	// Explorador de archivos en panel lateral (Sidebar Tree)
+	SidebarOpen  bool
+	SidebarWidth int
+	SidebarFocus bool
+	FileTree     *tree.FileTree
 
 	// Selección y portapapeles
 	Selecting       bool
@@ -90,6 +97,7 @@ func NewEditor(screen tcell.Screen, buf *buffer.Buffer, cfg *config.EditorConfig
 
 	syntaxes := syntax.LoadAllSyntaxes()
 	plugins := plugin.LoadAllPlugins()
+	ft, _ := tree.NewFileTree(".")
 
 	ed := &Editor{
 		Screen:          screen,
@@ -104,6 +112,10 @@ func NewEditor(screen tcell.Screen, buf *buffer.Buffer, cfg *config.EditorConfig
 		Running:         true,
 		PromptMode:      PromptNone,
 		PaletteItems:    buildDefaultPalette(),
+		SidebarOpen:     false,
+		SidebarWidth:    26,
+		SidebarFocus:    false,
+		FileTree:        ft,
 	}
 
 	// Incorporar comandos expuestos por plugins
@@ -123,6 +135,8 @@ func NewEditor(screen tcell.Screen, buf *buffer.Buffer, cfg *config.EditorConfig
 
 func buildDefaultPalette() []PaletteItem {
 	return []PaletteItem{
+		{Title: "Alternar explorador de archivos", Action: "view:toggle_tree", Description: "Ctrl+B"},
+		{Title: "Enfocar explorador / editor", Action: "tree:focus", Description: "Ctrl+E"},
 		{Title: "Abrir archivo...", Action: "file:find", Description: "Ctrl+O"},
 		{Title: "Nueva pestaña", Action: "buffer:new", Description: "Ctrl+N"},
 		{Title: "Cerrar pestaña", Action: "buffer:close", Description: "Ctrl+W"},
@@ -143,6 +157,17 @@ func buildDefaultPalette() []PaletteItem {
 		{Title: "Alternar números de línea", Action: "toggle:line_numbers", Description: "Mostrar/Ocultar"},
 		{Title: "Alternar resaltado línea actual", Action: "toggle:current_line", Description: "Mostrar/Ocultar"},
 		{Title: "Salir de edi", Action: "app:quit", Description: "Ctrl+Q"},
+	}
+}
+
+// OpenFolder carga una carpeta en el explorador de archivos y la abre en el panel lateral.
+func (e *Editor) OpenFolder(dirPath string) {
+	ft, err := tree.NewFileTree(dirPath)
+	if err == nil {
+		e.FileTree = ft
+		e.SidebarOpen = true
+		e.SidebarFocus = true
+		e.SetStatus(fmt.Sprintf("Carpeta abierta: %s (↑/↓ navegar, ↵ abrir, Tab alternar)", filepath.Base(dirPath)), 4*time.Second)
 	}
 }
 
@@ -202,7 +227,7 @@ func (e *Editor) OpenFile(path string) {
 	for i, b := range e.Buffers {
 		if filepath.Clean(b.FilePath) == clean {
 			e.SwitchToBuffer(i)
-			e.SetStatus(fmt.Sprintf("Cambiado a pestaña existente: %s", filepath.Base(clean)), 2*time.Second)
+			e.SetStatus(fmt.Sprintf("Cambiado a pestaña: %s", filepath.Base(clean)), 2*time.Second)
 			return
 		}
 	}
@@ -256,11 +281,17 @@ func (e *Editor) Draw() {
 		return
 	}
 
+	sidebarOffset := 0
+	if e.SidebarOpen {
+		sidebarOffset = e.SidebarWidth + 1
+		e.drawSidebar(e.SidebarWidth, height)
+	}
+
 	// 1. Renderizar Barra Superior de Pestañas (Línea 0)
-	e.drawTabBar(width)
+	e.drawTabBar(sidebarOffset, width)
 
 	topOffset := 1
-	editorHeight := height - 3 // Reservar línea 0 para pestañas, height-2 para status, height-1 para prompt
+	editorHeight := height - 3 // Línea 0 pestañas, height-2 status, height-1 prompt
 
 	// Ajustar scroll vertical
 	if e.Buffer.CursorRow < e.Buffer.ScrollRow {
@@ -270,15 +301,14 @@ func (e *Editor) Draw() {
 		e.Buffer.ScrollRow = e.Buffer.CursorRow - editorHeight + 1
 	}
 
-	// Calcular ancho del margen de números de línea
 	gutterWidth := 0
 	if e.Config.LineNumbers {
 		totalLines := e.Buffer.LineCount()
 		gutterWidth = len(strconv.Itoa(totalLines)) + 2
 	}
 
-	// Ajustar scroll horizontal
-	contentWidth := width - gutterWidth
+	editorStartX := sidebarOffset + gutterWidth
+	contentWidth := width - editorStartX
 	if contentWidth > 0 {
 		if e.Buffer.CursorCol < e.Buffer.ScrollCol {
 			e.Buffer.ScrollCol = e.Buffer.CursorCol
@@ -295,18 +325,18 @@ func (e *Editor) Draw() {
 		isCursorLine := (lineIdx == e.Buffer.CursorRow)
 
 		lineBgStyle := e.Theme.DefaultStyle
-		if isCursorLine && e.Config.HighlightCurrentLine {
+		if isCursorLine && e.Config.HighlightCurrentLine && (!e.SidebarOpen || !e.SidebarFocus) {
 			lineBgStyle = e.Theme.CursorLineStyle
 		}
 
-		// Rellenar fondo de la línea
-		for x := 0; x < width; x++ {
+		// Rellenar fondo de la línea desde sidebarOffset hasta el final
+		for x := sidebarOffset; x < width; x++ {
 			e.Screen.SetContent(x, screenY, ' ', nil, lineBgStyle)
 		}
 
 		if lineIdx >= e.Buffer.LineCount() {
-			if !e.Config.LineNumbers {
-				e.Screen.SetContent(0, screenY, '~', nil, e.Theme.LineNumberStyle)
+			if !e.Config.LineNumbers && sidebarOffset < width {
+				e.Screen.SetContent(sidebarOffset, screenY, '~', nil, e.Theme.LineNumberStyle)
 			}
 			continue
 		}
@@ -315,11 +345,13 @@ func (e *Editor) Draw() {
 		if e.Config.LineNumbers {
 			numStr := fmt.Sprintf("%*d ", gutterWidth-1, lineIdx+1)
 			numStyle := e.Theme.LineNumberStyle
-			if isCursorLine {
+			if isCursorLine && (!e.SidebarOpen || !e.SidebarFocus) {
 				numStyle = e.Theme.LineNumberActive
 			}
 			for i, ch := range numStr {
-				e.Screen.SetContent(i, screenY, ch, nil, numStyle)
+				if sidebarOffset+i < width {
+					e.Screen.SetContent(sidebarOffset+i, screenY, ch, nil, numStyle)
+				}
 			}
 		}
 
@@ -340,14 +372,13 @@ func (e *Editor) Draw() {
 			for _, span := range spans {
 				if byteOffset >= span.Start && byteOffset < span.End {
 					st = e.Theme.GetSyntaxStyle(span.Scope)
-					if isCursorLine && e.Config.HighlightCurrentLine && e.Theme.CursorLineBg != tcell.ColorDefault {
+					if isCursorLine && e.Config.HighlightCurrentLine && e.Theme.CursorLineBg != tcell.ColorDefault && (!e.SidebarOpen || !e.SidebarFocus) {
 						st = st.Background(e.Theme.CursorLineBg)
 					}
 					break
 				}
 			}
 
-			// Aplicar selección si corresponde
 			if e.isCellSelected(lineIdx, runeIdx) {
 				st = e.Theme.SelectionStyle
 			}
@@ -367,7 +398,7 @@ func (e *Editor) Draw() {
 		}
 
 		// Dibujar en pantalla respetando scroll horizontal
-		screenX := gutterWidth
+		screenX := editorStartX
 		for colIdx := e.Buffer.ScrollCol; colIdx < len(renderedRunes) && screenX < width; colIdx++ {
 			r := renderedRunes[colIdx]
 			st := runeStyles[colIdx]
@@ -382,17 +413,24 @@ func (e *Editor) Draw() {
 	// Renderizar Barra Inferior / Prompt / Paleta (Línea height - 1)
 	e.drawBottomBar(width, height-1)
 
-	// Renderizar modales flotantes si aplican o posicionar cursor normal
+	// Posicionamiento de cursor / modales
 	if e.PromptMode == PromptPalette {
 		e.drawPaletteModal(width, height)
 	} else if e.PromptMode == PromptFileFinder {
 		e.drawFileFinderModal(width, height)
 	} else if e.PromptMode != PromptNone {
 		e.Screen.ShowCursor(e.PromptCursor, height-1)
+	} else if e.SidebarOpen && e.SidebarFocus {
+		selY := 1 + (e.FileTree.SelectedIdx - e.FileTree.ScrollY)
+		if selY >= 1 && selY < height-2 {
+			e.Screen.ShowCursor(1, selY)
+		} else {
+			e.Screen.HideCursor()
+		}
 	} else {
-		cursorX := gutterWidth + (e.Buffer.CursorCol - e.Buffer.ScrollCol)
+		cursorX := editorStartX + (e.Buffer.CursorCol - e.Buffer.ScrollCol)
 		cursorY := topOffset + (e.Buffer.CursorRow - e.Buffer.ScrollRow)
-		if cursorX >= gutterWidth && cursorX < width && cursorY >= topOffset && cursorY < topOffset+editorHeight {
+		if cursorX >= editorStartX && cursorX < width && cursorY >= topOffset && cursorY < topOffset+editorHeight {
 			e.Screen.ShowCursor(cursorX, cursorY)
 		} else {
 			e.Screen.HideCursor()
@@ -402,13 +440,97 @@ func (e *Editor) Draw() {
 	e.Screen.Show()
 }
 
-func (e *Editor) drawTabBar(width int) {
+func (e *Editor) drawSidebar(treeWidth, height int) {
+	bgStyle := e.Theme.StatusBarStyle
+	lineFg, _, _ := e.Theme.LineNumberStyle.Decompose()
+	sepStyle := e.Theme.StatusBarStyle.Foreground(lineFg)
+
+	// Título en fila 0
+	titleStyle := bgStyle.Bold(true)
+	if e.SidebarFocus {
+		titleStyle = e.Theme.SelectionStyle.Bold(true)
+	}
+	for x := 0; x < treeWidth; x++ {
+		e.Screen.SetContent(x, 0, ' ', nil, titleStyle)
+	}
+	e.drawString(1, 0, "📁 EXPLORADOR", titleStyle)
+
+	// Separador vertical en x = treeWidth
+	for y := 0; y < height-1; y++ {
+		e.Screen.SetContent(treeWidth, y, '│', nil, sepStyle)
+	}
+
+	maxVisible := height - 3
+	visibleRows := e.FileTree.VisibleRows
+	selectedIdx := e.FileTree.SelectedIdx
+
+	if selectedIdx < e.FileTree.ScrollY {
+		e.FileTree.ScrollY = selectedIdx
+	}
+	if selectedIdx >= e.FileTree.ScrollY+maxVisible {
+		e.FileTree.ScrollY = selectedIdx - maxVisible + 1
+	}
+
+	for i := 0; i < maxVisible; i++ {
+		rowY := 1 + i
+		rowIdx := e.FileTree.ScrollY + i
+
+		for x := 0; x < treeWidth; x++ {
+			e.Screen.SetContent(x, rowY, ' ', nil, bgStyle)
+		}
+
+		if rowIdx >= len(visibleRows) {
+			continue
+		}
+
+		node := visibleRows[rowIdx]
+		isSelected := (rowIdx == selectedIdx)
+
+		itemStyle := bgStyle
+		if isSelected {
+			if e.SidebarFocus {
+				itemStyle = e.Theme.SelectionStyle
+			} else {
+				itemStyle = e.Theme.CursorLineStyle
+			}
+		}
+
+		for x := 0; x < treeWidth; x++ {
+			e.Screen.SetContent(x, rowY, ' ', nil, itemStyle)
+		}
+
+		indent := strings.Repeat("  ", node.Depth)
+		icon := "  "
+		if node.IsDir {
+			if node.Expanded {
+				icon = "▾ "
+			} else {
+				icon = "▸ "
+			}
+		}
+
+		label := indent + icon + node.Name
+		if len([]rune(label)) > treeWidth-1 {
+			label = string([]rune(label)[:treeWidth-2]) + "…"
+		}
+
+		textStyle := itemStyle
+		if node.IsDir {
+			kwFg, _, _ := e.Theme.GetSyntaxStyle("keyword").Decompose()
+			textStyle = textStyle.Foreground(kwFg).Bold(true)
+		}
+
+		e.drawString(0, rowY, label, textStyle)
+	}
+}
+
+func (e *Editor) drawTabBar(startX, width int) {
 	tabBarStyle := e.Theme.StatusBarStyle
-	for x := 0; x < width; x++ {
+	for x := startX; x < width; x++ {
 		e.Screen.SetContent(x, 0, ' ', nil, tabBarStyle)
 	}
 
-	currX := 0
+	currX := startX
 	for i, b := range e.Buffers {
 		name := b.FilePath
 		if name == "" {
@@ -464,7 +586,16 @@ func (e *Editor) drawStatusBar(width, y int) {
 		langName = e.CurrentSyntax.Name
 	}
 
-	left := fmt.Sprintf(" edi | %s%s (tab %d/%d)", fileName, modTag, e.ActiveBufferIdx+1, len(e.Buffers))
+	treeStatus := ""
+	if e.SidebarOpen {
+		if e.SidebarFocus {
+			treeStatus = " [Árbol ⚲] "
+		} else {
+			treeStatus = " [Árbol] "
+		}
+	}
+
+	left := fmt.Sprintf(" edi | %s%s%s (tab %d/%d)", fileName, modTag, treeStatus, e.ActiveBufferIdx+1, len(e.Buffers))
 	right := fmt.Sprintf("Ln %d, Col %d | %s | %s ", e.Buffer.CursorRow+1, e.Buffer.CursorCol+1, langName, e.Theme.Name)
 
 	for i, ch := range left {
@@ -511,7 +642,7 @@ func (e *Editor) drawBottomBar(width, y int) {
 		if e.StatusMessage != "" && time.Now().Before(e.StatusExpires) {
 			e.drawString(1, y, e.StatusMessage, e.Theme.GetSyntaxStyle("function"))
 		} else {
-			help := "^S: Guardar | ^O: Archivos | ^P: Comandos | ^F: Buscar | ^W: Cerrar | Tab: Pestañas"
+			help := "^S: Guardar | ^O: Archivos | ^B: Árbol | ^P: Comandos | ^F: Buscar | ^W: Cerrar | Tab: Pestañas"
 			e.drawString(1, y, help, e.Theme.LineNumberStyle)
 		}
 	}
@@ -773,14 +904,51 @@ func (e *Editor) HandleEvent(ev tcell.Event) {
 	case *tcell.EventKey:
 		if e.PromptMode != PromptNone {
 			e.handlePromptKey(ev)
+		} else if e.SidebarOpen && e.SidebarFocus {
+			e.handleSidebarKey(ev)
 		} else {
 			e.handleNormalKey(ev)
 		}
 	}
 }
 
+func (e *Editor) handleSidebarKey(ev *tcell.EventKey) {
+	chord := keyToString(ev)
+	if chord == "Ctrl+B" {
+		e.SidebarOpen = false
+		e.SidebarFocus = false
+		return
+	}
+	if chord == "Ctrl+E" {
+		e.SidebarFocus = false
+		return
+	}
+
+	switch ev.Key() {
+	case tcell.KeyUp:
+		e.FileTree.MoveUp()
+	case tcell.KeyDown:
+		e.FileTree.MoveDown()
+	case tcell.KeyRight:
+		e.FileTree.ExpandCurrent()
+	case tcell.KeyLeft:
+		e.FileTree.CollapseCurrent()
+	case tcell.KeyEnter:
+		node := e.FileTree.GetSelected()
+		if node != nil {
+			if node.IsDir {
+				e.FileTree.ToggleCurrent()
+			} else {
+				e.OpenFile(node.Path)
+				e.SidebarFocus = false
+			}
+		}
+	case tcell.KeyTab, tcell.KeyEscape:
+		e.SidebarFocus = false
+	}
+}
+
 func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
-	// Comprobar atajos registrados en keybindings
 	chord := keyToString(ev)
 	if action, ok := e.Keybindings[chord]; ok {
 		e.executeAction(action)
@@ -977,6 +1145,22 @@ func (e *Editor) submitPrompt() {
 
 func (e *Editor) executeAction(action string) {
 	switch action {
+	case "view:toggle_tree":
+		e.SidebarOpen = !e.SidebarOpen
+		if e.SidebarOpen {
+			e.SidebarFocus = true
+		} else {
+			e.SidebarFocus = false
+		}
+
+	case "tree:focus":
+		if e.SidebarOpen {
+			e.SidebarFocus = !e.SidebarFocus
+		} else {
+			e.SidebarOpen = true
+			e.SidebarFocus = true
+		}
+
 	case "file:find":
 		e.WorkspaceFiles = ScanWorkspaceFiles(3000)
 		e.FilteredFiles = FilterFiles(e.WorkspaceFiles, "")
