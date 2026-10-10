@@ -174,3 +174,15 @@ Los ejecutables se guardarán en `dist/`.
 ```bash
 ./edi main.go
 ```
+
+---
+
+## Documentación Detallada
+
+Para consultar guías técnicas y documentación adicional, visita la carpeta [`docs/`](docs/):
+
+- 📖 **[Guía Completa de Usuario](docs/user_guide.md)**: Atajos, buscador difuso, explorador de archivos y personalización.
+- 🏗️ **[Arquitectura Técnica](docs/architecture.md)**: Diseño de módulos, concurrencia de Git y ciclo de vida de la TUI.
+- 🗺️ **[Hoja de Ruta (Roadmap)](docs/roadmap.md)**: Hitos completados y planificación de nuevas características.
+- 🤝 **[Guía de Contribución](docs/contributing.md)**: Pautas de desarrollo, tests de simulación y estándares.
+- 🤖 **[Instrucciones para IA](docs/ai_context.md)**: Especificación técnica y reglas para asistentes de Inteligencia Artificial.
