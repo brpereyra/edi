@@ -101,16 +101,17 @@ func NewEditor(screen tcell.Screen, buf *buffer.Buffer, cfg *config.EditorConfig
 
 	syntaxes := syntax.LoadAllSyntaxes()
 	plugins := plugin.LoadAllPlugins()
-	ft, _ := tree.NewFileTree(".")
+
+	initialDir := ""
+	if buf != nil && buf.FilePath != "" {
+		initialDir = filepath.Dir(buf.FilePath)
+	} else {
+		initialDir, _ = os.Getwd()
+	}
+	ft, _ := tree.NewFileTree(initialDir)
 
 	var gitMgr *git.Manager
 	if cfg.GitIntegration {
-		initialDir := ""
-		if buf != nil && buf.FilePath != "" {
-			initialDir = filepath.Dir(buf.FilePath)
-		} else {
-			initialDir, _ = os.Getwd()
-		}
 		gitMgr = git.NewManager(initialDir)
 	}
 
@@ -154,7 +155,7 @@ func buildDefaultPalette() []PaletteItem {
 		{Title: "Documentación y Ayuda", Action: "help:docs", Description: "F1"},
 		{Title: "Alternar explorador de archivos", Action: "view:toggle_tree", Description: "Ctrl+B"},
 		{Title: "Enfocar explorador / editor", Action: "tree:focus", Description: "Ctrl+E"},
-		{Title: "Abrir archivo...", Action: "file:find", Description: "Ctrl+O"},
+		{Title: "Buscar archivo por nombre en workspace...", Action: "file:find", Description: "Ctrl+O (Fuzzy Finder)"},
 		{Title: "Nueva pestaña", Action: "buffer:new", Description: "Ctrl+N"},
 		{Title: "Cerrar pestaña", Action: "buffer:close", Description: "Ctrl+W"},
 		{Title: "Siguiente pestaña", Action: "buffer:next", Description: "Alt+Right / Ctrl+Tab"},
@@ -280,11 +281,20 @@ func (e *Editor) CloseActiveBuffer() {
 // OpenFile abre un archivo en una nueva pestaña o salta a ella si ya está abierto.
 func (e *Editor) OpenFile(path string) {
 	clean := filepath.Clean(path)
+	cleanAbs, _ := filepath.Abs(clean)
 	for i, b := range e.Buffers {
-		if filepath.Clean(b.FilePath) == clean {
+		bClean := filepath.Clean(b.FilePath)
+		if bClean == clean {
 			e.SwitchToBuffer(i)
 			e.SetStatus(fmt.Sprintf("Cambiado a pestaña: %s", filepath.Base(clean)), 2*time.Second)
 			return
+		}
+		if cleanAbs != "" {
+			if bAbs, err := filepath.Abs(bClean); err == nil && bAbs == cleanAbs {
+				e.SwitchToBuffer(i)
+				e.SetStatus(fmt.Sprintf("Cambiado a pestaña: %s", filepath.Base(clean)), 2*time.Second)
+				return
+			}
 		}
 	}
 
@@ -314,7 +324,7 @@ func (e *Editor) OpenFile(path string) {
 }
 
 func (e *Editor) getWorkspaceDir() string {
-	if e.FileTree != nil && e.FileTree.RootPath != "" {
+	if e.FileTree != nil && e.FileTree.RootPath != "" && e.FileTree.RootPath != "." {
 		return e.FileTree.RootPath
 	}
 	if e.Buffer != nil && e.Buffer.FilePath != "" {
@@ -322,6 +332,9 @@ func (e *Editor) getWorkspaceDir() string {
 		if dir != "" && dir != "." {
 			return dir
 		}
+	}
+	if e.FileTree != nil && e.FileTree.RootPath != "" {
+		return e.FileTree.RootPath
 	}
 	cwd, err := os.Getwd()
 	if err == nil {
@@ -1028,7 +1041,35 @@ func (e *Editor) drawFileFinderModal(width, height int) {
 			if isSelected {
 				prefix = "▶ "
 			}
-			e.drawString(startX+2, itemRow+i, prefix+filePath, itemStyle)
+
+			// Comprobar si el archivo ya está abierto en alguna pestaña
+			openTag := ""
+			for bIdx, b := range e.Buffers {
+				if b.FilePath != "" && (b.FilePath == filePath || filepath.Clean(b.FilePath) == filePath || strings.HasSuffix(b.FilePath, filePath) || filepath.Base(b.FilePath) == filePath) {
+					openTag = fmt.Sprintf("[tab %d]", bIdx+1)
+					break
+				}
+			}
+
+			maxLabelLen := modalWidth - 6
+			if openTag != "" {
+				maxLabelLen -= len(openTag) + 1
+			}
+			dispPath := filePath
+			if len([]rune(dispPath)) > maxLabelLen && maxLabelLen > 5 {
+				dispPath = "…" + string([]rune(dispPath)[len([]rune(dispPath))-(maxLabelLen-1):])
+			}
+
+			e.drawString(startX+2, itemRow+i, prefix+dispPath, itemStyle)
+
+			if openTag != "" && modalWidth > 20 {
+				tagStyle := e.Theme.GetSyntaxStyle("comment")
+				if isSelected {
+					tagStyle = itemStyle.Bold(true)
+				}
+				e.drawString(startX+modalWidth-len(openTag)-2, itemRow+i, openTag, tagStyle)
+			}
+
 			e.Screen.SetContent(startX+modalWidth-1, itemRow+i, '│', nil, borderStyle)
 		}
 	}
@@ -1521,11 +1562,20 @@ func (e *Editor) submitPrompt() {
 
 	case PromptFileFinder:
 		e.PromptMode = PromptNone
+		var target string
 		if len(e.FilteredFiles) > 0 && e.FileFinderIdx < len(e.FilteredFiles) {
-			target := e.FilteredFiles[e.FileFinderIdx]
-			e.OpenFile(target)
+			target = e.FilteredFiles[e.FileFinderIdx]
 		} else if strings.TrimSpace(e.PromptText) != "" {
-			e.OpenFile(strings.TrimSpace(e.PromptText))
+			target = strings.TrimSpace(e.PromptText)
+		}
+		if target != "" {
+			if !filepath.IsAbs(target) {
+				root := e.getWorkspaceDir()
+				if root != "" && root != "." {
+					target = filepath.Join(root, target)
+				}
+			}
+			e.OpenFile(target)
 		}
 	}
 }
@@ -1557,7 +1607,8 @@ func (e *Editor) executeAction(action string) {
 		}
 
 	case "file:find":
-		e.WorkspaceFiles = ScanWorkspaceFiles(3000)
+		root := e.getWorkspaceDir()
+		e.WorkspaceFiles = ScanWorkspaceFilesDir(root, 3000)
 		e.FilteredFiles = FilterFiles(e.WorkspaceFiles, "")
 		e.FileFinderIdx = 0
 		e.FileFinderScroll = 0
@@ -1663,6 +1714,26 @@ func (e *Editor) executeAction(action string) {
 		e.PromptMode = PromptGoto
 		e.PromptText = ""
 	case "palette:open":
+		e.PaletteItems = buildDefaultPalette()
+		if len(e.Buffers) > 1 {
+			var tabItems []PaletteItem
+			for idx, b := range e.Buffers {
+				name := filepath.Base(b.FilePath)
+				if name == "" || name == "." {
+					name = fmt.Sprintf("Sin título %d", idx+1)
+				}
+				desc := fmt.Sprintf("Ir a pestaña %d", idx+1)
+				if idx == e.ActiveBufferIdx {
+					desc += " (Activa)"
+				}
+				tabItems = append(tabItems, PaletteItem{
+					Title:       fmt.Sprintf("Pestaña: %s", name),
+					Action:      fmt.Sprintf("buffer:goto_idx:%d", idx),
+					Description: desc,
+				})
+			}
+			e.PaletteItems = append(tabItems, e.PaletteItems...)
+		}
 		e.PromptMode = PromptPalette
 		e.PromptText = ""
 		e.updatePaletteFilter()
@@ -1774,6 +1845,13 @@ func (e *Editor) executeAction(action string) {
 			e.SetStatus("No se detectó repositorio Git activo", 2*time.Second)
 		}
 	default:
+		if strings.HasPrefix(action, "buffer:goto_idx:") {
+			idxStr := strings.TrimPrefix(action, "buffer:goto_idx:")
+			if idx, err := strconv.Atoi(idxStr); err == nil && idx >= 0 && idx < len(e.Buffers) {
+				e.SwitchToBuffer(idx)
+			}
+			return
+		}
 		if strings.HasPrefix(action, "plugin:") {
 			e.runPluginCommand(strings.TrimPrefix(action, "plugin:"))
 		}

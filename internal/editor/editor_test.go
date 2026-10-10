@@ -429,4 +429,76 @@ func TestEditorGitIntegration(t *testing.T) {
 	}
 }
 
+func TestFileFinderAndTabSwitching(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("error inicializando pantalla: %v", err)
+	}
+	defer screen.Fini()
+
+	tmpDir := t.TempDir()
+	pathA := filepath.Join(tmpDir, "fileA.txt")
+	pathB := filepath.Join(tmpDir, "fileB.txt")
+	os.WriteFile(pathA, []byte("contenido A"), 0644)
+	os.WriteFile(pathB, []byte("contenido B"), 0644)
+
+	bufA, err := buffer.NewBufferFromFile(pathA)
+	if err != nil {
+		t.Fatalf("error creando buffer A: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	ed, err := NewEditor(screen, bufA, &cfg)
+	if err != nil {
+		t.Fatalf("error creando editor: %v", err)
+	}
+
+	// Abrir fileB usando OpenFile
+	ed.OpenFile(pathB)
+	if len(ed.Buffers) != 2 {
+		t.Fatalf("se esperaban 2 buffers, obtenidos %d", len(ed.Buffers))
+	}
+	if ed.ActiveBufferIdx != 1 {
+		t.Fatalf("se esperaba buffer activo 1 (fileB)")
+	}
+
+	// Probar cambiar a fileA via file:find
+	ed.executeAction("file:find")
+	if ed.PromptMode != PromptFileFinder {
+		t.Fatalf("se esperaba PromptFileFinder activo")
+	}
+	ed.PromptText = "fileA"
+	ed.FilteredFiles = FilterFiles(ed.WorkspaceFiles, ed.PromptText)
+	ed.FileFinderIdx = 0
+	ed.submitPrompt()
+
+	if ed.ActiveBufferIdx != 0 {
+		t.Errorf("se esperaba salto a pestaña 0 (fileA), obtenido %d", ed.ActiveBufferIdx)
+	}
+	if len(ed.Buffers) != 2 {
+		t.Errorf("no debería duplicar buffers, se esperaban 2, obtenidos %d", len(ed.Buffers))
+	}
+
+	// Probar cambiar via Paleta de Comandos
+	ed.executeAction("palette:open")
+	if ed.PromptMode != PromptPalette {
+		t.Fatalf("se esperaba PromptPalette activo")
+	}
+	// La paleta debe contener los tabs abiertos al inicio
+	foundTab := false
+	for _, item := range ed.FilteredItems {
+		if item.Title == "Pestaña: fileB.txt" {
+			foundTab = true
+			ed.executeAction(item.Action)
+			break
+		}
+	}
+	if !foundTab {
+		t.Errorf("se esperaba encontrar 'Pestaña: fileB.txt' en la paleta de comandos")
+	}
+	if ed.ActiveBufferIdx != 1 {
+		t.Errorf("se esperaba salto a pestaña 1 (fileB) desde la paleta, obtenido %d", ed.ActiveBufferIdx)
+	}
+}
+
 

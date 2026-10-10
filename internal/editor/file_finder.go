@@ -7,8 +7,11 @@ import (
 	"strings"
 )
 
-// ScanWorkspaceFiles descubre archivos en el directorio actual excluyendo carpetas ignoradas.
-func ScanWorkspaceFiles(maxFiles int) []string {
+// ScanWorkspaceFilesDir descubre archivos en el directorio especificado excluyendo carpetas ignoradas.
+func ScanWorkspaceFilesDir(root string, maxFiles int) []string {
+	if root == "" {
+		root = "."
+	}
 	var files []string
 	ignoreDirs := map[string]bool{
 		".git":         true,
@@ -20,7 +23,7 @@ func ScanWorkspaceFiles(maxFiles int) []string {
 		".vscode":      true,
 	}
 
-	_ = filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -42,8 +45,14 @@ func ScanWorkspaceFiles(maxFiles int) []string {
 			return nil
 		}
 
-		// Normalizar ruta relativa limpia
-		cleanPath := filepath.Clean(path)
+		// Normalizar ruta relativa limpia con respecto al root
+		rel := path
+		if root != "." {
+			if r, err := filepath.Rel(root, path); err == nil {
+				rel = r
+			}
+		}
+		cleanPath := filepath.Clean(rel)
 		files = append(files, cleanPath)
 		if len(files) >= maxFiles {
 			return fs.SkipAll
@@ -52,6 +61,11 @@ func ScanWorkspaceFiles(maxFiles int) []string {
 	})
 
 	return files
+}
+
+// ScanWorkspaceFiles descubre archivos en el directorio actual excluyendo carpetas ignoradas.
+func ScanWorkspaceFiles(maxFiles int) []string {
+	return ScanWorkspaceFilesDir(".", maxFiles)
 }
 
 // FuzzyMatch verifica si una consulta coincide difusamente o como subcadena en la ruta del archivo.
