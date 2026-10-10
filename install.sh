@@ -132,17 +132,62 @@ esac
 
 if [ "$PATH_OK" = false ]; then
     warn "El directorio '${INSTALL_DIR}' no está en tu variable \$PATH."
-    printf "\nPara usar 'edi' desde cualquier lugar, agrega lo siguiente a tu archivo de configuración de terminal:\n\n"
-    
+
     CURRENT_SHELL="$(basename "${SHELL:-bash}")"
+    RC_PATH=""
+    RC_NAME=""
+    EXPORT_CMD=""
+
     case "$CURRENT_SHELL" in
-        zsh)  RC_FILE="~/.zshrc" ;;
-        bash) RC_FILE="~/.bashrc" ;;
-        fish) RC_FILE="~/.config/fish/config.fish" ;;
-        *)    RC_FILE="tu archivo de perfil de shell" ;;
+        zsh)
+            RC_PATH="${HOME}/.zshrc"
+            RC_NAME="~/.zshrc"
+            EXPORT_CMD="export PATH=\"\$PATH:${INSTALL_DIR}\""
+            ;;
+        bash)
+            if [ -f "${HOME}/.bashrc" ]; then
+                RC_PATH="${HOME}/.bashrc"
+                RC_NAME="~/.bashrc"
+            elif [ -f "${HOME}/.bash_profile" ]; then
+                RC_PATH="${HOME}/.bash_profile"
+                RC_NAME="~/.bash_profile"
+            else
+                RC_PATH="${HOME}/.bashrc"
+                RC_NAME="~/.bashrc"
+            fi
+            EXPORT_CMD="export PATH=\"\$PATH:${INSTALL_DIR}\""
+            ;;
+        fish)
+            RC_PATH="${HOME}/.config/fish/config.fish"
+            RC_NAME="~/.config/fish/config.fish"
+            EXPORT_CMD="set -gx PATH \$PATH ${INSTALL_DIR}"
+            ;;
+        *)
+            RC_NAME="tu archivo de configuración de shell"
+            EXPORT_CMD="export PATH=\"\$PATH:${INSTALL_DIR}\""
+            ;;
     esac
-    
-    printf "  ${BOLD}export PATH=\"\$PATH:%s\"${NC}  (en %s)\n\n" "$INSTALL_DIR" "$RC_FILE"
+
+    ADDED_TO_RC=false
+    if [ -n "$RC_PATH" ]; then
+        mkdir -p "$(dirname "$RC_PATH")" 2>/dev/null || true
+        touch "$RC_PATH" 2>/dev/null || true
+
+        # Comprobar si ya existe la ruta activa en el archivo
+        if ! grep -q "${INSTALL_DIR}" "$RC_PATH" 2>/dev/null || grep -q "#.*${INSTALL_DIR}" "$RC_PATH" 2>/dev/null; then
+            printf "\n# edi text editor\n%s\n" "$EXPORT_CMD" >> "$RC_PATH"
+            ADDED_TO_RC=true
+            success "Se agregó automáticamente a ${BOLD}${RC_NAME}${NC}"
+            info "Para activarlo en tu sesión actual de terminal ejecuta:"
+            printf "  ${BOLD}source %s${NC}\n" "$RC_NAME"
+            printf "  (o directamente: ${BOLD}%s${NC})\n\n" "$EXPORT_CMD"
+        fi
+    fi
+
+    if [ "$ADDED_TO_RC" = false ]; then
+        printf "\nComando para agregarlo o activarlo manualmente:\n"
+        printf "  ${BOLD}echo '%s' >> %s && source %s${NC}\n\n" "$EXPORT_CMD" "$RC_NAME" "$RC_NAME"
+    fi
 fi
 
 # 8. Setup default configs (~/.edi-config/)
