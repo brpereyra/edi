@@ -194,3 +194,36 @@ func TestEditorSidebarAndOpenFolder(t *testing.T) {
 		t.Errorf("se esperaba SidebarOpen = false tras toggle")
 	}
 }
+
+func TestEditorOpenHelp(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("error inicializando pantalla: %v", err)
+	}
+	defer screen.Fini()
+
+	buf := buffer.NewEmptyBuffer()
+	cfg := config.DefaultConfig()
+	ed, err := NewEditor(screen, buf, &cfg)
+	if err != nil {
+		t.Fatalf("error creando editor: %v", err)
+	}
+
+	// Abrir ayuda
+	ed.OpenHelp()
+
+	if len(ed.Buffers) != 2 {
+		t.Fatalf("se esperaban 2 buffers tras OpenHelp, obtenidos %d", len(ed.Buffers))
+	}
+
+	activeBuf := ed.Buffer
+	if activeBuf.FilePath != "ayuda.md" {
+		t.Errorf("se esperaba buffer 'ayuda.md', obtenido '%s'", activeBuf.FilePath)
+	}
+	if len(activeBuf.Lines) < 5 {
+		t.Errorf("se esperaba contenido no vacío en buffer de ayuda")
+	}
+	if ed.CurrentSyntax == nil || ed.CurrentSyntax.Name != "Markdown" {
+		t.Errorf("se esperaba resaltado Markdown en la ayuda, obtenido: %v", ed.CurrentSyntax)
+	}
+}

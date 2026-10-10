@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"edi/defaults"
 	"edi/internal/buffer"
 	"edi/internal/config"
 	"edi/internal/plugin"
@@ -135,6 +136,7 @@ func NewEditor(screen tcell.Screen, buf *buffer.Buffer, cfg *config.EditorConfig
 
 func buildDefaultPalette() []PaletteItem {
 	return []PaletteItem{
+		{Title: "Documentación y Ayuda", Action: "help:docs", Description: "F1"},
 		{Title: "Alternar explorador de archivos", Action: "view:toggle_tree", Description: "Ctrl+B"},
 		{Title: "Enfocar explorador / editor", Action: "tree:focus", Description: "Ctrl+E"},
 		{Title: "Abrir archivo...", Action: "file:find", Description: "Ctrl+O"},
@@ -169,6 +171,33 @@ func (e *Editor) OpenFolder(dirPath string) {
 		e.SidebarFocus = true
 		e.SetStatus(fmt.Sprintf("Carpeta abierta: %s (↑/↓ navegar, ↵ abrir, Tab alternar)", filepath.Base(dirPath)), 4*time.Second)
 	}
+}
+
+// OpenHelp carga la documentación completa embebida en una nueva pestaña.
+func (e *Editor) OpenHelp() {
+	helpData, err := defaults.FS.ReadFile("help.md")
+	if err != nil {
+		e.SetStatus("Error cargando documentación", 2*time.Second)
+		return
+	}
+
+	for i, b := range e.Buffers {
+		if b.FilePath == "ayuda.md" {
+			e.SwitchToBuffer(i)
+			return
+		}
+	}
+
+	lines := strings.Split(string(helpData), "\n")
+	helpBuf := &buffer.Buffer{
+		FilePath: "ayuda.md",
+		Lines:    lines,
+		Modified: false,
+	}
+
+	e.Buffers = append(e.Buffers, helpBuf)
+	e.SwitchToBuffer(len(e.Buffers) - 1)
+	e.SetStatus("Ayuda abierta (Usa Ctrl+F para buscar, Ctrl+W para cerrar)", 3*time.Second)
 }
 
 func (e *Editor) detectCurrentSyntax() {
@@ -1145,6 +1174,9 @@ func (e *Editor) submitPrompt() {
 
 func (e *Editor) executeAction(action string) {
 	switch action {
+	case "help:docs":
+		e.OpenHelp()
+
 	case "view:toggle_tree":
 		e.SidebarOpen = !e.SidebarOpen
 		if e.SidebarOpen {
@@ -1540,6 +1572,8 @@ func keyToString(ev *tcell.EventKey) string {
 	}
 
 	switch ev.Key() {
+	case tcell.KeyF1:
+		return "F1"
 	case tcell.KeyCtrlA:
 		return "Ctrl+A"
 	case tcell.KeyCtrlB:
