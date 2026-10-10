@@ -142,7 +142,8 @@ func buildDefaultPalette() []PaletteItem {
 		{Title: "Abrir archivo...", Action: "file:find", Description: "Ctrl+O"},
 		{Title: "Nueva pestaña", Action: "buffer:new", Description: "Ctrl+N"},
 		{Title: "Cerrar pestaña", Action: "buffer:close", Description: "Ctrl+W"},
-		{Title: "Siguiente pestaña", Action: "buffer:next", Description: "Ctrl+Tab"},
+		{Title: "Siguiente pestaña", Action: "buffer:next", Description: "Alt+Right / Ctrl+Tab"},
+		{Title: "Pestaña anterior", Action: "buffer:prev", Description: "Alt+Left"},
 		{Title: "Guardar archivo", Action: "buffer:save", Description: "Ctrl+S"},
 		{Title: "Guardar como...", Action: "buffer:save_as", Description: "Guardar con nuevo nombre"},
 		{Title: "Ir a línea...", Action: "buffer:goto_line", Description: "Ctrl+G"},
@@ -930,6 +931,12 @@ func (e *Editor) HandleEvent(ev tcell.Event) {
 	case *tcell.EventResize:
 		e.Screen.Sync()
 
+	case *tcell.EventMouse:
+		if ev.Buttons()&tcell.ButtonPrimary != 0 {
+			mx, my := ev.Position()
+			e.handleMouseClick(mx, my)
+		}
+
 	case *tcell.EventKey:
 		if e.PromptMode != PromptNone {
 			e.handlePromptKey(ev)
@@ -941,15 +948,97 @@ func (e *Editor) HandleEvent(ev tcell.Event) {
 	}
 }
 
+func (e *Editor) handleMouseClick(mx, my int) {
+	if e.PromptMode != PromptNone {
+		return
+	}
+
+	// 1. Clic en barra de pestañas (fila 0)
+	if my == 0 {
+		sidebarOffset := 0
+		if e.SidebarOpen {
+			sidebarOffset = e.SidebarWidth + 1
+			if mx < e.SidebarWidth {
+				e.SidebarFocus = true
+				return
+			}
+		}
+
+		currX := sidebarOffset
+		for i, b := range e.Buffers {
+			name := b.FilePath
+			if name == "" {
+				name = "[Nuevo]"
+			} else {
+				name = filepath.Base(name)
+			}
+			mod := ""
+			if b.Modified {
+				mod = "*"
+			}
+			tabTitle := fmt.Sprintf(" %d:%s%s ", i+1, name, mod)
+			tabLen := len([]rune(tabTitle))
+
+			if mx >= currX && mx < currX+tabLen {
+				e.SwitchToBuffer(i)
+				return
+			}
+			currX += tabLen + 1
+		}
+		return
+	}
+
+	// 2. Clic en el panel lateral del explorador
+	if e.SidebarOpen && mx < e.SidebarWidth {
+		e.SidebarFocus = true
+		rowIdx := e.FileTree.ScrollY + (my - 1)
+		if rowIdx >= 0 && rowIdx < len(e.FileTree.VisibleRows) {
+			e.FileTree.SelectedIdx = rowIdx
+			node := e.FileTree.VisibleRows[rowIdx]
+			if node.IsDir {
+				e.FileTree.ToggleCurrent()
+			} else {
+				e.OpenFile(node.Path)
+				e.SidebarFocus = false
+			}
+		}
+		return
+	}
+
+	// 3. Clic en el área de edición del texto
+	_, height := e.Screen.Size()
+	if my >= 1 && my < height-2 {
+		e.SidebarFocus = false
+		sidebarOffset := 0
+		if e.SidebarOpen {
+			sidebarOffset = e.SidebarWidth + 1
+		}
+		gutterWidth := 0
+		if e.Config.LineNumbers {
+			gutterWidth = len(strconv.Itoa(e.Buffer.LineCount())) + 2
+		}
+		editorStartX := sidebarOffset + gutterWidth
+
+		targetRow := e.Buffer.ScrollRow + (my - 1)
+		targetCol := e.Buffer.ScrollCol + (mx - editorStartX)
+
+		if targetRow >= 0 && targetRow < e.Buffer.LineCount() {
+			e.Buffer.CursorRow = targetRow
+			e.Buffer.CursorCol = targetCol
+			e.Buffer.ClampCursor()
+			e.Selecting = false
+		}
+	}
+}
+
 func (e *Editor) handleSidebarKey(ev *tcell.EventKey) {
 	chord := keyToString(ev)
-	if chord == "Ctrl+B" {
-		e.SidebarOpen = false
+	if chord == "Ctrl+B" || chord == "Ctrl+E" {
 		e.SidebarFocus = false
 		return
 	}
-	if chord == "Ctrl+E" {
-		e.SidebarFocus = false
+	if action, ok := e.Keybindings[chord]; ok {
+		e.executeAction(action)
 		return
 	}
 
@@ -1178,10 +1267,15 @@ func (e *Editor) executeAction(action string) {
 		e.OpenHelp()
 
 	case "view:toggle_tree":
-		e.SidebarOpen = !e.SidebarOpen
-		if e.SidebarOpen {
+		if !e.SidebarOpen {
+			e.SidebarOpen = true
+			e.SidebarFocus = true
+		} else if !e.SidebarFocus {
+			// Ya está abierto, conmutar foco al explorador
 			e.SidebarFocus = true
 		} else {
+			// Ya está enfocado, cerrarlo
+			e.SidebarOpen = false
 			e.SidebarFocus = false
 		}
 
@@ -1214,6 +1308,30 @@ func (e *Editor) executeAction(action string) {
 		if len(e.Buffers) > 1 {
 			e.SwitchToBuffer((e.ActiveBufferIdx + 1) % len(e.Buffers))
 		}
+
+	case "buffer:prev":
+		if len(e.Buffers) > 1 {
+			e.SwitchToBuffer((e.ActiveBufferIdx - 1 + len(e.Buffers)) % len(e.Buffers))
+		}
+
+	case "buffer:goto_1":
+		e.SwitchToBuffer(0)
+	case "buffer:goto_2":
+		e.SwitchToBuffer(1)
+	case "buffer:goto_3":
+		e.SwitchToBuffer(2)
+	case "buffer:goto_4":
+		e.SwitchToBuffer(3)
+	case "buffer:goto_5":
+		e.SwitchToBuffer(4)
+	case "buffer:goto_6":
+		e.SwitchToBuffer(5)
+	case "buffer:goto_7":
+		e.SwitchToBuffer(6)
+	case "buffer:goto_8":
+		e.SwitchToBuffer(7)
+	case "buffer:goto_9":
+		e.SwitchToBuffer(8)
 
 	case "selection:copy":
 		text := e.getSelectedText()
@@ -1613,6 +1731,22 @@ func keyToString(ev *tcell.EventKey) string {
 	case tcell.KeyTab:
 		if ev.Modifiers()&tcell.ModCtrl != 0 {
 			return "Ctrl+Tab"
+		}
+	case tcell.KeyLeft:
+		if ev.Modifiers()&tcell.ModAlt != 0 {
+			return "Alt+Left"
+		}
+	case tcell.KeyRight:
+		if ev.Modifiers()&tcell.ModAlt != 0 {
+			return "Alt+Right"
+		}
+	case tcell.KeyPgUp:
+		if ev.Modifiers()&tcell.ModCtrl != 0 {
+			return "Ctrl+PgUp"
+		}
+	case tcell.KeyPgDn:
+		if ev.Modifiers()&tcell.ModCtrl != 0 {
+			return "Ctrl+PgDn"
 		}
 	}
 
