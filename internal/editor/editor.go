@@ -11,6 +11,7 @@ import (
 	"edi/defaults"
 	"edi/internal/buffer"
 	"edi/internal/config"
+	"edi/internal/git"
 	"edi/internal/plugin"
 	"edi/internal/syntax"
 	"edi/internal/theme"
@@ -61,6 +62,7 @@ type Editor struct {
 	SidebarWidth int
 	SidebarFocus bool
 	FileTree     *tree.FileTree
+	GitManager   *git.Manager
 
 	// Selección y portapapeles
 	Selecting       bool
@@ -101,6 +103,17 @@ func NewEditor(screen tcell.Screen, buf *buffer.Buffer, cfg *config.EditorConfig
 	plugins := plugin.LoadAllPlugins()
 	ft, _ := tree.NewFileTree(".")
 
+	var gitMgr *git.Manager
+	if cfg.GitIntegration {
+		initialDir := ""
+		if buf != nil && buf.FilePath != "" {
+			initialDir = filepath.Dir(buf.FilePath)
+		} else {
+			initialDir, _ = os.Getwd()
+		}
+		gitMgr = git.NewManager(initialDir)
+	}
+
 	ed := &Editor{
 		Screen:          screen,
 		Buffers:         []*buffer.Buffer{buf},
@@ -118,6 +131,7 @@ func NewEditor(screen tcell.Screen, buf *buffer.Buffer, cfg *config.EditorConfig
 		SidebarWidth:    26,
 		SidebarFocus:    false,
 		FileTree:        ft,
+		GitManager:      gitMgr,
 	}
 
 	// Incorporar comandos expuestos por plugins
@@ -162,6 +176,10 @@ func buildDefaultPalette() []PaletteItem {
 		{Title: "Cambiar tema: Monokai", Action: "theme:monokai", Description: "Tema oscuro retro"},
 		{Title: "Alternar números de línea", Action: "toggle:line_numbers", Description: "Mostrar/Ocultar"},
 		{Title: "Alternar resaltado línea actual", Action: "toggle:current_line", Description: "Mostrar/Ocultar"},
+		{Title: "Git: Ver Diff del archivo actual", Action: "git:diff_file", Description: "Comparar con HEAD"},
+		{Title: "Git: Ver Diff de todo el proyecto", Action: "git:diff_project", Description: "Todos los cambios"},
+		{Title: "Git: Archivos modificados (Status)", Action: "git:status_files", Description: "Lista de archivos cambiados"},
+		{Title: "Git: Refrescar estado", Action: "git:refresh", Description: "Actualizar cambios"},
 		{Title: "Salir de edi", Action: "app:quit", Description: "Ctrl+Q"},
 	}
 }
@@ -173,6 +191,11 @@ func (e *Editor) OpenFolder(dirPath string) {
 		e.FileTree = ft
 		e.SidebarOpen = true
 		e.SidebarFocus = true
+		if e.GitManager != nil {
+			e.GitManager.RefreshAsync(dirPath, func() {
+				e.Screen.PostEvent(tcell.NewEventInterrupt(nil))
+			})
+		}
 		e.SetStatus(fmt.Sprintf("Carpeta abierta: %s (↑/↓ navegar, ↵ abrir, Tab alternar)", filepath.Base(dirPath)), 4*time.Second)
 	}
 }
@@ -282,7 +305,52 @@ func (e *Editor) OpenFile(path string) {
 
 	e.Buffers = append(e.Buffers, newBuf)
 	e.SwitchToBuffer(len(e.Buffers) - 1)
+	if e.GitManager != nil && !e.GitManager.IsRepo() {
+		e.GitManager.RefreshAsync(filepath.Dir(clean), func() {
+			e.Screen.PostEvent(tcell.NewEventInterrupt(nil))
+		})
+	}
 	e.SetStatus(fmt.Sprintf("Abierto en pestaña %d: '%s'", len(e.Buffers), filepath.Base(clean)), 2*time.Second)
+}
+
+func (e *Editor) getWorkspaceDir() string {
+	if e.FileTree != nil && e.FileTree.RootPath != "" {
+		return e.FileTree.RootPath
+	}
+	if e.Buffer != nil && e.Buffer.FilePath != "" {
+		dir := filepath.Dir(e.Buffer.FilePath)
+		if dir != "" && dir != "." {
+			return dir
+		}
+	}
+	cwd, err := os.Getwd()
+	if err == nil {
+		return cwd
+	}
+	return "."
+}
+
+func (e *Editor) openVirtualBuffer(title, content string) {
+	cleanLines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+	for i, b := range e.Buffers {
+		if b.FilePath == title {
+			b.Lines = cleanLines
+			b.Modified = false
+			e.SwitchToBuffer(i)
+			return
+		}
+	}
+
+	newBuf := &buffer.Buffer{
+		FilePath: title,
+		Lines:    cleanLines,
+		Modified: false,
+	}
+
+	e.Buffers = append(e.Buffers, newBuf)
+	e.SwitchToBuffer(len(e.Buffers) - 1)
+	e.detectCurrentSyntax()
+	e.SetStatus(fmt.Sprintf("Abierto %s (Usa Ctrl+W para cerrar)", title), 2*time.Second)
 }
 
 // SetStatus muestra un mensaje temporal en la barra inferior.
@@ -545,9 +613,9 @@ func (e *Editor) drawSidebar(treeWidth, height int) {
 		}
 
 		label := indent + icon + node.Name
-		if len([]rune(label)) > treeWidth-1 {
-			label = string([]rune(label)[:treeWidth-2]) + "…"
-		}
+
+		gitBadge := ""
+		gitBadgeStyle := itemStyle
 
 		textStyle := itemStyle
 		if node.IsDir {
@@ -555,7 +623,61 @@ func (e *Editor) drawSidebar(treeWidth, height int) {
 			textStyle = textStyle.Foreground(kwFg).Bold(true)
 		}
 
+		if e.GitManager != nil && e.GitManager.IsRepo() {
+			if node.IsDir {
+				if e.GitManager.DirHasChanges(node.Path) {
+					dotFg, _, _ := e.Theme.GetSyntaxStyle("number").Decompose()
+					gitBadgeStyle = itemStyle.Foreground(dotFg)
+					gitBadge = "•"
+				}
+			} else {
+				st := e.GitManager.GetFileStatus(node.Path)
+				if st != git.StatusNone {
+					gitBadge = st.Badge()
+					switch st {
+					case git.StatusModified:
+						yellowFg, _, _ := e.Theme.GetSyntaxStyle("type").Decompose()
+						gitBadgeStyle = itemStyle.Foreground(yellowFg).Bold(true)
+						if !isSelected {
+							textStyle = textStyle.Foreground(yellowFg)
+						}
+					case git.StatusUntracked, git.StatusAdded:
+						greenFg, _, _ := e.Theme.GetSyntaxStyle("string").Decompose()
+						gitBadgeStyle = itemStyle.Foreground(greenFg).Bold(true)
+						if !isSelected {
+							textStyle = textStyle.Foreground(greenFg)
+						}
+					case git.StatusDeleted:
+						redFg, _, _ := e.Theme.GetSyntaxStyle("keyword").Decompose()
+						gitBadgeStyle = itemStyle.Foreground(redFg).Bold(true)
+						if !isSelected {
+							textStyle = textStyle.Foreground(redFg)
+						}
+					case git.StatusRenamed:
+						cyanFg, _, _ := e.Theme.GetSyntaxStyle("function").Decompose()
+						gitBadgeStyle = itemStyle.Foreground(cyanFg).Bold(true)
+						if !isSelected {
+							textStyle = textStyle.Foreground(cyanFg)
+						}
+					}
+				}
+			}
+		}
+
+		maxLabelWidth := treeWidth - 1
+		if gitBadge != "" {
+			maxLabelWidth = treeWidth - 3
+		}
+		if len([]rune(label)) > maxLabelWidth {
+			label = string([]rune(label)[:maxLabelWidth-1]) + "…"
+		}
+
 		e.drawString(0, rowY, label, textStyle)
+
+		if gitBadge != "" && treeWidth >= 6 {
+			badgeX := treeWidth - 2
+			e.drawString(badgeX, rowY, gitBadge, gitBadgeStyle)
+		}
 	}
 }
 
@@ -630,7 +752,15 @@ func (e *Editor) drawStatusBar(width, y int) {
 		}
 	}
 
-	left := fmt.Sprintf(" edi | %s%s%s (tab %d/%d)", fileName, modTag, treeStatus, e.ActiveBufferIdx+1, len(e.Buffers))
+	gitInfo := ""
+	if e.GitManager != nil && e.GitManager.IsRepo() {
+		summary := e.GitManager.GetSummary()
+		if summary != "" {
+			gitInfo = " | " + summary
+		}
+	}
+
+	left := fmt.Sprintf(" edi | %s%s%s%s (tab %d/%d)", fileName, modTag, gitInfo, treeStatus, e.ActiveBufferIdx+1, len(e.Buffers))
 	right := fmt.Sprintf("Ln %d, Col %d | %s | %s ", e.Buffer.CursorRow+1, e.Buffer.CursorCol+1, langName, e.Theme.Name)
 
 	for i, ch := range left {
@@ -1019,6 +1149,9 @@ func (e *Editor) HandleEvent(ev tcell.Event) {
 	switch ev := ev.(type) {
 	case *tcell.EventResize:
 		e.Screen.Sync()
+
+	case *tcell.EventInterrupt:
+		// Refresco asíncrono completado (Git, plugins)
 
 	case *tcell.EventMouse:
 		if ev.Buttons()&tcell.ButtonPrimary != 0 {
@@ -1579,6 +1712,67 @@ func (e *Editor) executeAction(action string) {
 		e.Config.LineNumbers = !e.Config.LineNumbers
 	case "toggle:current_line":
 		e.Config.HighlightCurrentLine = !e.Config.HighlightCurrentLine
+	case "git:diff_file":
+		if e.GitManager != nil && e.GitManager.IsRepo() {
+			if e.Buffer.FilePath == "" {
+				e.SetStatus("El archivo actual no tiene ruta guardada", 2*time.Second)
+				return
+			}
+			diff, err := e.GitManager.GetFileDiff(e.Buffer.FilePath)
+			if err != nil || strings.TrimSpace(diff) == "" {
+				e.SetStatus("Sin cambios con respecto a HEAD", 2*time.Second)
+				return
+			}
+			e.openVirtualBuffer(fmt.Sprintf("%s.diff", filepath.Base(e.Buffer.FilePath)), diff)
+		} else {
+			e.SetStatus("No se detectó repositorio Git activo", 2*time.Second)
+		}
+
+	case "git:diff_project":
+		if e.GitManager != nil && e.GitManager.IsRepo() {
+			diff, err := e.GitManager.GetProjectDiff()
+			if err != nil || strings.TrimSpace(diff) == "" {
+				e.SetStatus("El repositorio no tiene cambios con respecto a HEAD", 2*time.Second)
+				return
+			}
+			e.openVirtualBuffer("proyecto.diff", diff)
+		} else {
+			e.SetStatus("No se detectó repositorio Git activo", 2*time.Second)
+		}
+
+	case "git:status_files":
+		if e.GitManager != nil && e.GitManager.IsRepo() {
+			snap := e.GitManager.GetStatusSnapshot()
+			if len(snap.Files) == 0 {
+				e.SetStatus("Repositorio limpio (0 cambios)", 2*time.Second)
+				return
+			}
+			var changed []string
+			for fPath := range snap.Files {
+				rel, err := filepath.Rel(snap.RootDir, fPath)
+				if err == nil {
+					changed = append(changed, rel)
+				} else {
+					changed = append(changed, fPath)
+				}
+			}
+			e.WorkspaceFiles = changed
+			e.FilteredFiles = changed
+			e.FileFinderIdx = 0
+			e.FileFinderScroll = 0
+			e.PromptMode = PromptFileFinder
+			e.PromptText = ""
+		} else {
+			e.SetStatus("No se detectó repositorio Git activo", 2*time.Second)
+		}
+
+	case "git:refresh":
+		if e.GitManager != nil && e.GitManager.IsRepo() {
+			e.GitManager.RefreshSync(e.getWorkspaceDir())
+			e.SetStatus(fmt.Sprintf("Git actualizado: %s", e.GitManager.GetSummary()), 2*time.Second)
+		} else {
+			e.SetStatus("No se detectó repositorio Git activo", 2*time.Second)
+		}
 	default:
 		if strings.HasPrefix(action, "plugin:") {
 			e.runPluginCommand(strings.TrimPrefix(action, "plugin:"))
@@ -1766,6 +1960,11 @@ func (e *Editor) saveFile() {
 		e.WorkspaceFiles = ScanWorkspaceFiles(3000)
 		if e.FileTree != nil {
 			e.FileTree.Refresh()
+		}
+		if e.GitManager != nil {
+			e.GitManager.RefreshAsync(e.getWorkspaceDir(), func() {
+				e.Screen.PostEvent(tcell.NewEventInterrupt(nil))
+			})
 		}
 	}
 }

@@ -1,6 +1,8 @@
 package editor
 
 import (
+	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -348,6 +350,82 @@ func TestEditorMoveLine(t *testing.T) {
 	}
 	if ed.SelectAnchorRow != 1 || ed.Buffer.CursorRow != 2 {
 		t.Errorf("esperado anchor 1 y cursor 2, obtenido anchor %d y cursor %d", ed.SelectAnchorRow, ed.Buffer.CursorRow)
+	}
+}
+
+func TestEditorGitIntegration(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("error inicializando pantalla: %v", err)
+	}
+	defer screen.Fini()
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "sample.txt")
+	if err := os.WriteFile(testFile, []byte("hello world\n"), 0644); err != nil {
+		t.Fatalf("error creando archivo: %v", err)
+	}
+
+	buf, err := buffer.NewBufferFromFile(testFile)
+	if err != nil {
+		t.Fatalf("error leyendo archivo: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.GitIntegration = true
+	ed, err := NewEditor(screen, buf, &cfg)
+	if err != nil {
+		t.Fatalf("error creando editor: %v", err)
+	}
+
+	// Sin git repo inicial
+	ed.executeAction("git:diff_file")
+	if ed.StatusMessage != "No se detectó repositorio Git activo" {
+		t.Errorf("mensaje inesperado sin git repo: %s", ed.StatusMessage)
+	}
+
+	// Inicializar git repo en tmpDir
+	exec.Command("git", "-C", tmpDir, "init").Run()
+	exec.Command("git", "-C", tmpDir, "config", "user.name", "Tester").Run()
+	exec.Command("git", "-C", tmpDir, "config", "user.email", "tester@test.com").Run()
+	exec.Command("git", "-C", tmpDir, "add", ".").Run()
+	exec.Command("git", "-C", tmpDir, "commit", "-m", "init").Run()
+
+	// Modificar archivo
+	if err := os.WriteFile(testFile, []byte("hello world\nnew line\n"), 0644); err != nil {
+		t.Fatalf("error modificando archivo: %v", err)
+	}
+
+	// Refrescar git
+	ed.GitManager.RefreshSync(tmpDir)
+	if !ed.GitManager.IsRepo() {
+		t.Fatalf("se esperaba que detectara el repositorio git")
+	}
+
+	status := ed.GitManager.GetFileStatus(testFile)
+	if status.Badge() == "" {
+		t.Errorf("se esperaba estado modificado para %s", testFile)
+	}
+
+	// Ejecutar git:diff_file
+	ed.executeAction("git:diff_file")
+	if len(ed.Buffers) != 2 {
+		t.Fatalf("se esperaba buffer virtual con el diff, total buffers: %d", len(ed.Buffers))
+	}
+	if filepath.Ext(ed.Buffer.FilePath) != ".diff" {
+		t.Errorf("se esperaba extensión .diff, obtenido: %s", ed.Buffer.FilePath)
+	}
+
+	// Ejecutar git:diff_project
+	ed.executeAction("git:diff_project")
+	if len(ed.Buffers) != 3 {
+		t.Fatalf("se esperaba buffer virtual para el diff del proyecto, total buffers: %d", len(ed.Buffers))
+	}
+
+	// Ejecutar git:status_files
+	ed.executeAction("git:status_files")
+	if ed.PromptMode != PromptFileFinder {
+		t.Errorf("se esperaba que git:status_files abriera el selector de archivos")
 	}
 }
 

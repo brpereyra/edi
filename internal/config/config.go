@@ -20,6 +20,7 @@ type EditorConfig struct {
 	HighlightCurrentLine bool   `json:"highlight_current_line"`
 	StatusBar            bool   `json:"status_bar"`
 	AutoIndent           bool   `json:"auto_indent"`
+	GitIntegration       bool   `json:"git_integration"`
 }
 
 // DefaultConfig retorna la configuración predeterminada en memoria.
@@ -32,6 +33,7 @@ func DefaultConfig() EditorConfig {
 		HighlightCurrentLine: true,
 		StatusBar:            true,
 		AutoIndent:           true,
+		GitIntegration:       true,
 	}
 }
 

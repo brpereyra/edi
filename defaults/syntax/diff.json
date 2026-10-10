@@ -1,0 +1,22 @@
+{
+  "name": "Diff",
+  "extensions": [".diff", ".patch", "diff"],
+  "rules": [
+    {
+      "scope": "function",
+      "pattern": "^@@.*@@.*$"
+    },
+    {
+      "scope": "string",
+      "pattern": "^\\+.*$"
+    },
+    {
+      "scope": "keyword",
+      "pattern": "^-.*$"
+    },
+    {
+      "scope": "comment",
+      "pattern": "^(diff|index|--- |\\+\\+\\+ ).*$"
+    }
+  ]
+}

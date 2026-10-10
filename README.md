@@ -18,6 +18,7 @@ Un editor de texto en consola (TUI) moderno, rápido, altamente personalizable y
 - **Pestañas y Múltiples Buffers (`Ctrl+N`, `Ctrl+W`, `Ctrl+Tab`, `Alt+1..9`)**: Barra superior visual con soporte para múltiples archivos simultáneos e indicador de estado `*`.
 - **Selección de Texto y Portapapeles (`Ctrl+C`, `Ctrl+X`, `Ctrl+V`)**: Selección multi-línea con `Shift + Flechas`, copiar, cortar y pegar.
 - **Historial Undo/Redo**: Deshacer (`Ctrl+Z`) y Rehacer (`Ctrl+Y`) multinivel.
+- **Integración Automática con Git**: Detección sin configuración. Muestra la rama y resumen de cambios en la barra de estado (`git: main [~1 +2]`), insignias en el explorador de archivos (`M`, `?`, `+`, `D`, `•`), y diffs coloreados en pestañas virtuales (`Ctrl+P` -> Git Diff). Asíncrono y no bloqueante.
 - **Defaults Embebidos**: El binario incluye temas, sintaxis y atajos compilados internamente con `//go:embed`. Funciona de inmediato sin necesidad de crear archivos previos.
 
 ---

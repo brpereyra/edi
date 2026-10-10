@@ -43,6 +43,21 @@ Bienvenido a **edi**, un editor de texto para consola (TUI) rápido, portable y 
 - `a` / `n` : Crear un nuevo archivo dentro de la carpeta seleccionada.
 - `Tab` o `Esc` : Devolver el foco al editor de texto.
 
+### Integración con Git (Automática y Zero-Config)
+Si `edi` se ejecuta dentro de un repositorio Git, se activa automáticamente sin necesidad de configuración:
+- **Barra de estado**: Muestra la rama activa y el resumen de cambios (`git: main [~1 +2]`).
+- **Insignias en el explorador (`Ctrl+B`)**:
+  - `M` : Archivo modificado
+  - `?` : Archivo nuevo sin seguimiento (untracked)
+  - `+` : Archivo en área de preparación (staged)
+  - `D` : Archivo eliminado
+  - `•` : Carpeta con archivos modificados en su interior
+- **Comandos Git en la Paleta (`Ctrl+P`)**:
+  - `Git: Ver Diff del archivo actual` : Abre una pestaña virtual con el diff coloreado frente a HEAD.
+  - `Git: Ver Diff de todo el proyecto` : Abre un diff unificado de todo el repositorio.
+  - `Git: Archivos modificados (Status)` : Abre un filtro rápido para saltar directamente a los archivos cambiados.
+  - `Git: Refrescar estado` : Fuerza una actualización inmediata de cambios.
+
 ---
 
 ## 2. Personalización (`~/.edi-config/`)
