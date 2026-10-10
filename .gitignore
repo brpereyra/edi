@@ -1,0 +1,10 @@
+# Binaries
+edi
+edi-*
+*.exe
+*.test
+
+# Editor / OS files
+.DS_Store
+*.swp
+*~

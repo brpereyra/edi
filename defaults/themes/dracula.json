@@ -1,0 +1,24 @@
+{
+  "name": "dracula",
+  "ui": {
+    "background": "#282a36",
+    "foreground": "#f8f8f2",
+    "cursor": "#f8f8f0",
+    "cursor_line": "#44475a",
+    "line_number": "#6272a4",
+    "line_number_active": "#f8f8f2",
+    "status_bar_bg": "#44475a",
+    "status_bar_fg": "#f8f8f2",
+    "selection": "#44475a"
+  },
+  "syntax": {
+    "comment": "#6272a4",
+    "keyword": "#ff79c6",
+    "string": "#f1fa8c",
+    "type": "#8be9fd",
+    "number": "#bd93f9",
+    "function": "#50fa7b",
+    "operator": "#ff79c6",
+    "variable": "#f8f8f2"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "Go",
+  "extensions": [".go"],
+  "rules": [
+    {
+      "scope": "comment",
+      "pattern": "//.*$|/\\*.*?\\*/"
+    },
+    {
+      "scope": "string",
+      "pattern": "\"(?:\\\\.|[^\"\\\\])*\"|`[^`]*`"
+    },
+    {
+      "scope": "keyword",
+      "pattern": "\\b(package|import|func|type|struct|interface|return|if|else|for|range|var|const|switch|case|select|chan|go|defer|fallthrough|continue|break|default)\\b"
+    },
+    {
+      "scope": "type",
+      "pattern": "\\b(int|int8|int16|int32|int64|uint|uint8|uint16|uint32|uint64|string|bool|byte|rune|error|float32|float64|any|uintptr)\\b"
+    },
+    {
+      "scope": "number",
+      "pattern": "\\b(0x[0-9a-fA-F]+|\\d+(\\.\\d+)?)\\b"
+    },
+    {
+      "scope": "function",
+      "pattern": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\s*\\("
+    }
+  ]
+}

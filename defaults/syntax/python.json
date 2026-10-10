@@ -1,0 +1,30 @@
+{
+  "name": "Python",
+  "extensions": [".py"],
+  "rules": [
+    {
+      "scope": "comment",
+      "pattern": "#.*$"
+    },
+    {
+      "scope": "string",
+      "pattern": "\"\"\"[\\s\\S]*?\"\"\"|'''[\\s\\S]*?'''|\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'"
+    },
+    {
+      "scope": "keyword",
+      "pattern": "\\b(def|class|if|elif|else|for|while|try|except|finally|with|as|return|yield|import|from|in|is|not|and|or|lambda|pass|break|continue|async|await|global|nonlocal)\\b"
+    },
+    {
+      "scope": "type",
+      "pattern": "\\b(int|float|str|bool|list|dict|set|tuple|None|True|False|self)\\b"
+    },
+    {
+      "scope": "number",
+      "pattern": "\\b\\d+(\\.\\d+)?\\b"
+    },
+    {
+      "scope": "function",
+      "pattern": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\s*\\("
+    }
+  ]
+}

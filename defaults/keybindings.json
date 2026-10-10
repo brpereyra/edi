@@ -1,0 +1,11 @@
+{
+  "Ctrl+S": "buffer:save",
+  "Ctrl+Q": "app:quit",
+  "Ctrl+Z": "buffer:undo",
+  "Ctrl+Y": "buffer:redo",
+  "Ctrl+F": "buffer:find",
+  "Ctrl+G": "buffer:goto_line",
+  "Ctrl+P": "palette:open",
+  "Ctrl+D": "line:duplicate",
+  "Ctrl+K": "line:delete"
+}

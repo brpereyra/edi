@@ -1,0 +1,26 @@
+{
+  "name": "Markdown",
+  "extensions": [".md", ".markdown"],
+  "rules": [
+    {
+      "scope": "keyword",
+      "pattern": "^#{1,6}\\s.*$"
+    },
+    {
+      "scope": "string",
+      "pattern": "`[^`]+`"
+    },
+    {
+      "scope": "function",
+      "pattern": "\\[[^\\]]+\\]\\([^\\)]+\\)"
+    },
+    {
+      "scope": "comment",
+      "pattern": "^>\\s.*$"
+    },
+    {
+      "scope": "number",
+      "pattern": "^(\\s*[-*+]|\\s*\\d+\\.)\\s"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "theme": "dracula",
+  "tab_size": 4,
+  "expand_tabs": true,
+  "line_numbers": true,
+  "highlight_current_line": true,
+  "status_bar": true,
+  "auto_indent": true
+}

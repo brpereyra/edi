@@ -1,0 +1,24 @@
+{
+  "name": "monokai",
+  "ui": {
+    "background": "#272822",
+    "foreground": "#f8f8f2",
+    "cursor": "#f8f8f0",
+    "cursor_line": "#3e3d32",
+    "line_number": "#75715e",
+    "line_number_active": "#f8f8f2",
+    "status_bar_bg": "#3e3d32",
+    "status_bar_fg": "#f8f8f2",
+    "selection": "#49483e"
+  },
+  "syntax": {
+    "comment": "#75715e",
+    "keyword": "#f92672",
+    "string": "#e6db74",
+    "type": "#66d9ef",
+    "number": "#ae81ff",
+    "function": "#a6e22e",
+    "operator": "#f92672",
+    "variable": "#fd971f"
+  }
+}

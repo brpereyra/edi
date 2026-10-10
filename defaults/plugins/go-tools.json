@@ -1,0 +1,22 @@
+{
+  "name": "Go Tools",
+  "version": "1.0.0",
+  "languages": ["go"],
+  "hooks": {
+    "on_save": [
+      {
+        "action": "pipe_buffer",
+        "command": "gofmt",
+        "description": "Formatear con gofmt"
+      }
+    ]
+  },
+  "commands": [
+    {
+      "id": "go:vet",
+      "title": "Ejecutar go vet",
+      "action": "run_shell",
+      "command": "go vet ./..."
+    }
+  ]
+}

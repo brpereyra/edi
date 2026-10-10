@@ -1,0 +1,22 @@
+{
+  "name": "JSON",
+  "extensions": [".json"],
+  "rules": [
+    {
+      "scope": "comment",
+      "pattern": "//.*$"
+    },
+    {
+      "scope": "keyword",
+      "pattern": "\\b(true|false|null)\\b"
+    },
+    {
+      "scope": "string",
+      "pattern": "\"(?:\\\\.|[^\"\\\\])*\""
+    },
+    {
+      "scope": "number",
+      "pattern": "-?\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b"
+    }
+  ]
+}
