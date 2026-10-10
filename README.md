@@ -152,7 +152,24 @@ Crea `~/.edi-config/themes/nord.json`:
 
 ---
 
-## Compilación e Instalación
+## Instalación Rápida (Linux y macOS)
+
+Instala o actualiza `edi` con un solo comando:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/brpereyra/edi/main/install.sh | bash
+```
+
+> El instalador detecta automáticamente tu sistema (Linux/macOS) y arquitectura (`amd64` o `arm64`), instala el binario en `~/.local/bin` o `/usr/local/bin` y genera la configuración inicial en `~/.edi-config/`.
+
+### Instalación vía `go install` (cualquier plataforma):
+```bash
+go install github.com/brpereyra/edi/cmd/edi@latest
+```
+
+---
+
+## Compilación Local desde el Código Fuente
 
 ### Compilar binario local:
 ```bash

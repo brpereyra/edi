@@ -1,5 +1,6 @@
 # Binaries
-edi
+/edi
+/dist/
 edi-*
 *.exe
 *.test

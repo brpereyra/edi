@@ -6,8 +6,23 @@ Manual completo y detallado para dominar el editor de texto en consola **edi**.
 
 ## 1. Instalación y Primeros Pasos
 
-### 1.1 Ejecución Básica
-`edi` es un único binario ejecutable sin dependencias externas:
+### 1.1 Instalación Automática (Linux y macOS)
+Puedes instalar `edi` directamente en tu terminal ejecutando:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/brpereyra/edi/main/install.sh | bash
+```
+
+El script detecta la arquitectura de tu procesador (`amd64` o `arm64`), instala el binario en `~/.local/bin` o `/usr/local/bin`, verifica tu `$PATH` e inicializa automáticamente la carpeta `~/.edi-config/`.
+
+### 1.2 Instalación con Go
+Si tienes Go instalado:
+```bash
+go install github.com/brpereyra/edi/cmd/edi@latest
+```
+
+### 1.3 Ejecución Básica
+Una vez instalado:
 
 ```bash
 # Abrir un archivo específico
