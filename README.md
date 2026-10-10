@@ -11,8 +11,10 @@ Un editor de texto en consola (TUI) moderno, rápido, altamente personalizable y
 - 🎨 **Paleta TrueColor (24-bit)**: Soporte completo de temas personalizados (`~/.edi-config/themes/*.json`) con Drácula y Monokai incluidos de fábrica.
 - 🔍 **Resaltado de sintaxis declarativo**: Agrega soporte para cualquier lenguaje simplemente colocando un archivo `.json` en `~/.edi-config/syntax/`.
 - ⌨️ **Atajos de teclado configurables**: Mapeo completo en `~/.edi-config/keybindings.json` (soporta formato JSONC con comentarios `//`).
-- 🧭 **Paleta de Comandos (`Ctrl+P`)**: Búsqueda difusa de acciones, cambio de temas en vivo, alternar opciones del editor.
-- 🧩 **Complementos declarativos JSON**: Ejecución de formateadores externos vía `stdin/stdout` (como `gofmt` o `prettier`) en el hook `on_save`.
+- 🧭 **Paleta de Comandos Modal (`Ctrl+P`)**: Ventana flotante interactiva con navegación `↑`/`↓`, búsqueda difusa y cambio de temas en caliente.
+- 📂 **Buscador Rápido de Archivos (`Ctrl+O`)**: Selector difuso instantáneo que descubre archivos en el proyecto ignorando `.git` o dependencias.
+- 📑 **Pestañas y Múltiples Buffers (`Ctrl+N`, `Ctrl+W`, `Ctrl+Tab`)**: Barra superior visual con soporte para múltiples archivos simultáneos e indicador de estado `*`.
+- ✂️ **Selección de Texto y Portapapeles (`Ctrl+C`, `Ctrl+X`, `Ctrl+V`)**: Selección multi-línea con `Shift + Flechas`, copiar, cortar y pegar.
 - ↩️ **Historial Undo/Redo**: Deshacer (`Ctrl+Z`) y Rehacer (`Ctrl+Y`) multinivel.
 - 🗂️ **Defaults Embebidos**: El binario incluye temas, sintaxis y atajos compilados internamente con `//go:embed`. Funciona de inmediato sin necesidad de crear archivos previos.
 
@@ -55,15 +57,23 @@ Para inicializar automáticamente esta estructura en tu máquina:
 
 | Atajo | Acción |
 | :--- | :--- |
+| `Ctrl+P` | Abrir la Paleta de Comandos (Modal flotante) |
+| `Ctrl+O` | Buscador rápido de archivos del proyecto |
 | `Ctrl+S` | Guardar archivo (ejecuta formateadores si existen) |
-| `Ctrl+Q` | Salir de edi (con advertencia si hay cambios sin guardar) |
-| `Ctrl+P` | Abrir la Paleta de Comandos |
-| `Ctrl+F` | Buscar texto en el archivo |
+| `Ctrl+N` | Abrir nueva pestaña vacía |
+| `Ctrl+W` | Cerrar pestaña activa (con advertencia si no está guardada) |
+| `Ctrl+Tab` | Alternar entre pestañas abiertas |
+| `Shift + Flechas` | Seleccionar texto (multi-línea) |
+| `Ctrl+C` | Copiar selección (o línea actual si no hay selección) |
+| `Ctrl+X` | Cortar selección (o línea actual) |
+| `Ctrl+V` | Pegar desde el portapapeles |
+| `Ctrl+F` | Buscar texto en el archivo activo |
 | `Ctrl+G` | Ir a un número de línea |
 | `Ctrl+Z` | Deshacer (Undo) |
 | `Ctrl+Y` | Rehacer (Redo) |
 | `Ctrl+D` | Duplicar línea actual |
 | `Ctrl+K` | Eliminar línea actual |
+| `Ctrl+Q` | Salir de edi (con confirmación de seguridad) |
 
 ---
 

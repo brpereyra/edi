@@ -6,6 +6,13 @@
   "Ctrl+F": "buffer:find",
   "Ctrl+G": "buffer:goto_line",
   "Ctrl+P": "palette:open",
+  "Ctrl+O": "file:find",
+  "Ctrl+N": "buffer:new",
+  "Ctrl+W": "buffer:close",
+  "Ctrl+Tab": "buffer:next",
+  "Ctrl+C": "selection:copy",
+  "Ctrl+X": "selection:cut",
+  "Ctrl+V": "selection:paste",
   "Ctrl+D": "line:duplicate",
   "Ctrl+K": "line:delete"
 }

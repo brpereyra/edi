@@ -2,6 +2,7 @@ package editor
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ const (
 	PromptGoto
 	PromptSaveAs
 	PromptPalette
+	PromptFileFinder
 )
 
 // PaletteItem representa un comando en la paleta de acciones rápidas.
@@ -33,29 +35,45 @@ type PaletteItem struct {
 	Description string
 }
 
-// Editor representa la sesión activa del editor de texto.
+// Editor representa la sesión activa del editor de texto con soporte multibuffer y modales.
 type Editor struct {
-	Screen        tcell.Screen
-	Buffer        *buffer.Buffer
-	Config        *config.EditorConfig
-	Keybindings   map[string]string
-	Theme         *theme.CompiledTheme
-	Syntaxes      []*syntax.CompiledSyntax
-	CurrentSyntax *syntax.CompiledSyntax
-	Plugins       []*plugin.Plugin
+	Screen          tcell.Screen
+	Buffers         []*buffer.Buffer
+	ActiveBufferIdx int
+	Buffer          *buffer.Buffer // Puntero al buffer activo actual
+	Config          *config.EditorConfig
+	Keybindings     map[string]string
+	Theme           *theme.CompiledTheme
+	Syntaxes        []*syntax.CompiledSyntax
+	CurrentSyntax   *syntax.CompiledSyntax
+	Plugins         []*plugin.Plugin
 
 	Running       bool
 	StatusMessage string
 	StatusExpires time.Time
 	QuitWarned    bool
 
+	// Selección y portapapeles
+	Selecting       bool
+	SelectAnchorRow int
+	SelectAnchorCol int
+	Clipboard       string
+
+	// Modales y prompts
 	PromptMode     PromptType
 	PromptText     string
 	PromptCursor   int
 	PaletteItems   []PaletteItem
 	PaletteIndex   int
+	PaletteScroll  int
 	FilteredItems  []PaletteItem
 	LastSearchTerm string
+
+	// Buscador de archivos
+	WorkspaceFiles   []string
+	FilteredFiles    []string
+	FileFinderIdx    int
+	FileFinderScroll int
 }
 
 // NewEditor crea e inicializa una nueva instancia del editor.
@@ -74,16 +92,18 @@ func NewEditor(screen tcell.Screen, buf *buffer.Buffer, cfg *config.EditorConfig
 	plugins := plugin.LoadAllPlugins()
 
 	ed := &Editor{
-		Screen:       screen,
-		Buffer:       buf,
-		Config:       cfg,
-		Keybindings:  keybindings,
-		Theme:        th,
-		Syntaxes:     syntaxes,
-		Plugins:      plugins,
-		Running:      true,
-		PromptMode:   PromptNone,
-		PaletteItems: buildDefaultPalette(),
+		Screen:          screen,
+		Buffers:         []*buffer.Buffer{buf},
+		ActiveBufferIdx: 0,
+		Buffer:          buf,
+		Config:          cfg,
+		Keybindings:     keybindings,
+		Theme:           th,
+		Syntaxes:        syntaxes,
+		Plugins:         plugins,
+		Running:         true,
+		PromptMode:      PromptNone,
+		PaletteItems:    buildDefaultPalette(),
 	}
 
 	// Incorporar comandos expuestos por plugins
@@ -103,10 +123,17 @@ func NewEditor(screen tcell.Screen, buf *buffer.Buffer, cfg *config.EditorConfig
 
 func buildDefaultPalette() []PaletteItem {
 	return []PaletteItem{
+		{Title: "Abrir archivo...", Action: "file:find", Description: "Ctrl+O"},
+		{Title: "Nueva pestaña", Action: "buffer:new", Description: "Ctrl+N"},
+		{Title: "Cerrar pestaña", Action: "buffer:close", Description: "Ctrl+W"},
+		{Title: "Siguiente pestaña", Action: "buffer:next", Description: "Ctrl+Tab"},
 		{Title: "Guardar archivo", Action: "buffer:save", Description: "Ctrl+S"},
 		{Title: "Guardar como...", Action: "buffer:save_as", Description: "Guardar con nuevo nombre"},
 		{Title: "Ir a línea...", Action: "buffer:goto_line", Description: "Ctrl+G"},
 		{Title: "Buscar texto...", Action: "buffer:find", Description: "Ctrl+F"},
+		{Title: "Copiar selección", Action: "selection:copy", Description: "Ctrl+C"},
+		{Title: "Cortar selección", Action: "selection:cut", Description: "Ctrl+X"},
+		{Title: "Pegar portapapeles", Action: "selection:paste", Description: "Ctrl+V"},
 		{Title: "Deshacer (Undo)", Action: "buffer:undo", Description: "Ctrl+Z"},
 		{Title: "Rehacer (Redo)", Action: "buffer:redo", Description: "Ctrl+Y"},
 		{Title: "Duplicar línea", Action: "line:duplicate", Description: "Ctrl+D"},
@@ -120,9 +147,84 @@ func buildDefaultPalette() []PaletteItem {
 }
 
 func (e *Editor) detectCurrentSyntax() {
-	if e.Buffer.FilePath != "" {
+	if e.Buffer != nil && e.Buffer.FilePath != "" {
 		e.CurrentSyntax = syntax.DetectSyntax(e.Buffer.FilePath, e.Syntaxes)
+	} else {
+		e.CurrentSyntax = nil
 	}
+}
+
+// SwitchToBuffer cambia el buffer activo al índice indicado.
+func (e *Editor) SwitchToBuffer(idx int) {
+	if idx >= 0 && idx < len(e.Buffers) {
+		e.ActiveBufferIdx = idx
+		e.Buffer = e.Buffers[idx]
+		e.detectCurrentSyntax()
+		e.Selecting = false
+	}
+}
+
+// CloseActiveBuffer cierra el buffer actual o reinicia si es el único.
+func (e *Editor) CloseActiveBuffer() {
+	if len(e.Buffers) <= 1 {
+		if e.Buffer.Modified && !e.QuitWarned {
+			e.QuitWarned = true
+			e.SetStatus("¡Cambios sin guardar! Presiona Ctrl+W de nuevo para descartar", 3*time.Second)
+			return
+		}
+		e.Buffers[0] = buffer.NewEmptyBuffer()
+		e.Buffer = e.Buffers[0]
+		e.detectCurrentSyntax()
+		e.QuitWarned = false
+		e.SetStatus("Pestaña reiniciada", 1*time.Second)
+		return
+	}
+
+	if e.Buffer.Modified && !e.QuitWarned {
+		e.QuitWarned = true
+		e.SetStatus("¡Cambios sin guardar! Presiona Ctrl+W de nuevo para cerrar pestaña", 3*time.Second)
+		return
+	}
+
+	e.Buffers = append(e.Buffers[:e.ActiveBufferIdx], e.Buffers[e.ActiveBufferIdx+1:]...)
+	if e.ActiveBufferIdx >= len(e.Buffers) {
+		e.ActiveBufferIdx = len(e.Buffers) - 1
+	}
+	e.Buffer = e.Buffers[e.ActiveBufferIdx]
+	e.detectCurrentSyntax()
+	e.QuitWarned = false
+	e.Selecting = false
+}
+
+// OpenFile abre un archivo en una nueva pestaña o salta a ella si ya está abierto.
+func (e *Editor) OpenFile(path string) {
+	clean := filepath.Clean(path)
+	for i, b := range e.Buffers {
+		if filepath.Clean(b.FilePath) == clean {
+			e.SwitchToBuffer(i)
+			e.SetStatus(fmt.Sprintf("Cambiado a pestaña existente: %s", filepath.Base(clean)), 2*time.Second)
+			return
+		}
+	}
+
+	newBuf, err := buffer.NewBufferFromFile(clean)
+	if err != nil {
+		e.SetStatus(fmt.Sprintf("Error abriendo archivo: %v", err), 3*time.Second)
+		return
+	}
+
+	// Reemplazar buffer único si está vacío y sin título
+	if len(e.Buffers) == 1 && e.Buffer.FilePath == "" && !e.Buffer.Modified && len(e.Buffer.Lines) <= 1 && e.Buffer.Lines[0] == "" {
+		e.Buffers[0] = newBuf
+		e.Buffer = newBuf
+		e.detectCurrentSyntax()
+		e.SetStatus(fmt.Sprintf("Abierto '%s'", filepath.Base(clean)), 2*time.Second)
+		return
+	}
+
+	e.Buffers = append(e.Buffers, newBuf)
+	e.SwitchToBuffer(len(e.Buffers) - 1)
+	e.SetStatus(fmt.Sprintf("Abierto en pestaña %d: '%s'", len(e.Buffers), filepath.Base(clean)), 2*time.Second)
 }
 
 // SetStatus muestra un mensaje temporal en la barra inferior.
@@ -149,12 +251,16 @@ func (e *Editor) Draw() {
 	e.Screen.Clear()
 	width, height := e.Screen.Size()
 
-	if height < 3 {
+	if height < 4 {
 		e.Screen.Show()
 		return
 	}
 
-	editorHeight := height - 2 // Reservar 2 líneas para status bar y prompt
+	// 1. Renderizar Barra Superior de Pestañas (Línea 0)
+	e.drawTabBar(width)
+
+	topOffset := 1
+	editorHeight := height - 3 // Reservar línea 0 para pestañas, height-2 para status, height-1 para prompt
 
 	// Ajustar scroll vertical
 	if e.Buffer.CursorRow < e.Buffer.ScrollRow {
@@ -184,6 +290,7 @@ func (e *Editor) Draw() {
 
 	// Renderizar área del buffer de texto
 	for y := 0; y < editorHeight; y++ {
+		screenY := topOffset + y
 		lineIdx := e.Buffer.ScrollRow + y
 		isCursorLine := (lineIdx == e.Buffer.CursorRow)
 
@@ -194,13 +301,12 @@ func (e *Editor) Draw() {
 
 		// Rellenar fondo de la línea
 		for x := 0; x < width; x++ {
-			e.Screen.SetContent(x, y, ' ', nil, lineBgStyle)
+			e.Screen.SetContent(x, screenY, ' ', nil, lineBgStyle)
 		}
 
 		if lineIdx >= e.Buffer.LineCount() {
-			// Más allá del final del archivo
 			if !e.Config.LineNumbers {
-				e.Screen.SetContent(0, y, '~', nil, e.Theme.LineNumberStyle)
+				e.Screen.SetContent(0, screenY, '~', nil, e.Theme.LineNumberStyle)
 			}
 			continue
 		}
@@ -213,25 +319,23 @@ func (e *Editor) Draw() {
 				numStyle = e.Theme.LineNumberActive
 			}
 			for i, ch := range numStr {
-				e.Screen.SetContent(i, y, ch, nil, numStyle)
+				e.Screen.SetContent(i, screenY, ch, nil, numStyle)
 			}
 		}
 
-		// Dibujar contenido de la línea con resaltado de sintaxis
+		// Dibujar contenido de la línea con resaltado de sintaxis y selección
 		lineText := e.Buffer.GetLine(lineIdx)
 		spans := syntax.HighlightLine(e.CurrentSyntax, lineText)
 
-		// Expandir tabulaciones si aplica
 		var renderedRunes []rune
 		var runeStyles []tcell.Style
 
 		lineRunes := []rune(lineText)
 		byteOffset := 0
 
-		for _, r := range lineRunes {
+		for runeIdx, r := range lineRunes {
 			runeLen := len(string(r))
 
-			// Determinar estilo para esta posición
 			st := lineBgStyle
 			for _, span := range spans {
 				if byteOffset >= span.Start && byteOffset < span.End {
@@ -241,6 +345,11 @@ func (e *Editor) Draw() {
 					}
 					break
 				}
+			}
+
+			// Aplicar selección si corresponde
+			if e.isCellSelected(lineIdx, runeIdx) {
+				st = e.Theme.SelectionStyle
 			}
 
 			if r == '\t' {
@@ -262,7 +371,7 @@ func (e *Editor) Draw() {
 		for colIdx := e.Buffer.ScrollCol; colIdx < len(renderedRunes) && screenX < width; colIdx++ {
 			r := renderedRunes[colIdx]
 			st := runeStyles[colIdx]
-			e.Screen.SetContent(screenX, y, r, nil, st)
+			e.Screen.SetContent(screenX, screenY, r, nil, st)
 			screenX++
 		}
 	}
@@ -273,13 +382,17 @@ func (e *Editor) Draw() {
 	// Renderizar Barra Inferior / Prompt / Paleta (Línea height - 1)
 	e.drawBottomBar(width, height-1)
 
-	// Posicionar el cursor
-	if e.PromptMode != PromptNone {
+	// Renderizar modales flotantes si aplican o posicionar cursor normal
+	if e.PromptMode == PromptPalette {
+		e.drawPaletteModal(width, height)
+	} else if e.PromptMode == PromptFileFinder {
+		e.drawFileFinderModal(width, height)
+	} else if e.PromptMode != PromptNone {
 		e.Screen.ShowCursor(e.PromptCursor, height-1)
 	} else {
 		cursorX := gutterWidth + (e.Buffer.CursorCol - e.Buffer.ScrollCol)
-		cursorY := e.Buffer.CursorRow - e.Buffer.ScrollRow
-		if cursorX >= gutterWidth && cursorX < width && cursorY >= 0 && cursorY < editorHeight {
+		cursorY := topOffset + (e.Buffer.CursorRow - e.Buffer.ScrollRow)
+		if cursorX >= gutterWidth && cursorX < width && cursorY >= topOffset && cursorY < topOffset+editorHeight {
 			e.Screen.ShowCursor(cursorX, cursorY)
 		} else {
 			e.Screen.HideCursor()
@@ -287,6 +400,47 @@ func (e *Editor) Draw() {
 	}
 
 	e.Screen.Show()
+}
+
+func (e *Editor) drawTabBar(width int) {
+	tabBarStyle := e.Theme.StatusBarStyle
+	for x := 0; x < width; x++ {
+		e.Screen.SetContent(x, 0, ' ', nil, tabBarStyle)
+	}
+
+	currX := 0
+	for i, b := range e.Buffers {
+		name := b.FilePath
+		if name == "" {
+			name = "[Nuevo]"
+		} else {
+			name = filepath.Base(name)
+		}
+
+		mod := ""
+		if b.Modified {
+			mod = "*"
+		}
+
+		title := fmt.Sprintf(" %d:%s%s ", i+1, name, mod)
+
+		tabStyle := tabBarStyle
+		if i == e.ActiveBufferIdx {
+			tabStyle = e.Theme.SelectionStyle.Bold(true)
+		}
+
+		for _, ch := range title {
+			if currX < width {
+				e.Screen.SetContent(currX, 0, ch, nil, tabStyle)
+				currX++
+			}
+		}
+
+		if currX < width {
+			e.Screen.SetContent(currX, 0, '│', nil, tabBarStyle)
+			currX++
+		}
+	}
 }
 
 func (e *Editor) drawStatusBar(width, y int) {
@@ -310,17 +464,15 @@ func (e *Editor) drawStatusBar(width, y int) {
 		langName = e.CurrentSyntax.Name
 	}
 
-	left := fmt.Sprintf(" edi | %s%s", fileName, modTag)
+	left := fmt.Sprintf(" edi | %s%s (tab %d/%d)", fileName, modTag, e.ActiveBufferIdx+1, len(e.Buffers))
 	right := fmt.Sprintf("Ln %d, Col %d | %s | %s ", e.Buffer.CursorRow+1, e.Buffer.CursorCol+1, langName, e.Theme.Name)
 
-	// Escribir izquierda
 	for i, ch := range left {
 		if i < width {
 			e.Screen.SetContent(i, y, ch, nil, st)
 		}
 	}
 
-	// Escribir derecha
 	startX := width - len(right)
 	if startX > len(left) {
 		for i, ch := range right {
@@ -352,27 +504,258 @@ func (e *Editor) drawBottomBar(width, y int) {
 		e.drawString(0, y, prompt, e.Theme.DefaultStyle)
 		e.PromptCursor = len("Guardar como: ") + len([]rune(e.PromptText))
 
-	case PromptPalette:
-		prompt := fmt.Sprintf("Comandos: %s", e.PromptText)
-		e.drawString(0, y, prompt, e.Theme.DefaultStyle)
-		e.PromptCursor = len("Comandos: ") + len([]rune(e.PromptText))
-
-		// Mostrar sugerencia destacada
-		if len(e.FilteredItems) > 0 {
-			selected := e.FilteredItems[e.PaletteIndex]
-			hint := fmt.Sprintf("  -> [%s] %s", selected.Title, selected.Description)
-			e.drawString(len(prompt)+2, y, hint, e.Theme.GetSyntaxStyle("keyword"))
-		}
+	case PromptPalette, PromptFileFinder:
+		e.drawString(1, y, "Modal activo (Presiona Esc para cerrar)", e.Theme.LineNumberStyle)
 
 	default:
-		// Mostrar status message temporal o atajos de ayuda
 		if e.StatusMessage != "" && time.Now().Before(e.StatusExpires) {
 			e.drawString(1, y, e.StatusMessage, e.Theme.GetSyntaxStyle("function"))
 		} else {
-			help := "^S: Guardar | ^Q: Salir | ^P: Comandos | ^F: Buscar | ^G: Ir a línea"
+			help := "^S: Guardar | ^O: Archivos | ^P: Comandos | ^F: Buscar | ^W: Cerrar | Tab: Pestañas"
 			e.drawString(1, y, help, e.Theme.LineNumberStyle)
 		}
 	}
+}
+
+func (e *Editor) drawPaletteModal(width, height int) {
+	modalWidth := 66
+	if width < 70 {
+		modalWidth = width - 4
+	}
+	if modalWidth < 30 {
+		modalWidth = width
+	}
+
+	startX := (width - modalWidth) / 2
+	startY := 2
+	maxItems := 7
+	if height < 15 {
+		maxItems = 3
+	}
+
+	totalItems := len(e.FilteredItems)
+	visibleItems := totalItems
+	if visibleItems > maxItems {
+		visibleItems = maxItems
+	}
+	if visibleItems == 0 {
+		visibleItems = 1
+	}
+
+	modalHeight := 4 + visibleItems
+
+	boxStyle := e.Theme.StatusBarStyle
+	borderStyle := e.Theme.StatusBarStyle
+	inputStyle := e.Theme.DefaultStyle
+
+	for dy := 0; dy < modalHeight; dy++ {
+		for dx := 0; dx < modalWidth; dx++ {
+			e.Screen.SetContent(startX+dx, startY+dy, ' ', nil, boxStyle)
+		}
+	}
+
+	e.Screen.SetContent(startX, startY, '╭', nil, borderStyle)
+	title := " Paleta de Comandos "
+	for dx := 1; dx < modalWidth-1; dx++ {
+		e.Screen.SetContent(startX+dx, startY, '─', nil, borderStyle)
+	}
+	e.drawString(startX+3, startY, title, e.Theme.GetSyntaxStyle("keyword").Bold(true))
+	e.Screen.SetContent(startX+modalWidth-1, startY, '╮', nil, borderStyle)
+
+	e.Screen.SetContent(startX, startY+1, '│', nil, borderStyle)
+	for dx := 1; dx < modalWidth-1; dx++ {
+		e.Screen.SetContent(startX+dx, startY+1, ' ', nil, inputStyle)
+	}
+	e.drawString(startX+2, startY+1, "> ", e.Theme.GetSyntaxStyle("function").Bold(true))
+	e.drawString(startX+4, startY+1, e.PromptText, inputStyle)
+	e.Screen.SetContent(startX+modalWidth-1, startY+1, '│', nil, borderStyle)
+
+	e.Screen.SetContent(startX, startY+2, '├', nil, borderStyle)
+	for dx := 1; dx < modalWidth-1; dx++ {
+		e.Screen.SetContent(startX+dx, startY+2, '─', nil, borderStyle)
+	}
+	e.Screen.SetContent(startX+modalWidth-1, startY+2, '┤', nil, borderStyle)
+
+	if e.PaletteIndex < e.PaletteScroll {
+		e.PaletteScroll = e.PaletteIndex
+	}
+	if e.PaletteIndex >= e.PaletteScroll+maxItems {
+		e.PaletteScroll = e.PaletteIndex - maxItems + 1
+	}
+
+	itemRow := startY + 3
+	if totalItems == 0 {
+		e.Screen.SetContent(startX, itemRow, '│', nil, borderStyle)
+		e.drawString(startX+4, itemRow, "(No hay comandos coincidentes)", e.Theme.LineNumberStyle)
+		e.Screen.SetContent(startX+modalWidth-1, itemRow, '│', nil, borderStyle)
+	} else {
+		for i := 0; i < visibleItems; i++ {
+			actualIdx := e.PaletteScroll + i
+			if actualIdx >= totalItems {
+				break
+			}
+			item := e.FilteredItems[actualIdx]
+			isSelected := (actualIdx == e.PaletteIndex)
+
+			itemStyle := boxStyle
+			if isSelected {
+				itemStyle = e.Theme.SelectionStyle
+			}
+
+			for dx := 1; dx < modalWidth-1; dx++ {
+				e.Screen.SetContent(startX+dx, itemRow+i, ' ', nil, itemStyle)
+			}
+
+			e.Screen.SetContent(startX, itemRow+i, '│', nil, borderStyle)
+
+			prefix := "  "
+			if isSelected {
+				prefix = "▶ "
+			}
+			e.drawString(startX+2, itemRow+i, prefix+item.Title, itemStyle)
+
+			if item.Description != "" {
+				descLen := len([]rune(item.Description))
+				descX := startX + modalWidth - 2 - descLen
+				if descX > startX+len([]rune(item.Title))+6 {
+					e.drawString(descX, itemRow+i, item.Description, itemStyle)
+				}
+			}
+
+			e.Screen.SetContent(startX+modalWidth-1, itemRow+i, '│', nil, borderStyle)
+		}
+	}
+
+	bottomY := startY + modalHeight - 1
+	e.Screen.SetContent(startX, bottomY, '╰', nil, borderStyle)
+	for dx := 1; dx < modalWidth-1; dx++ {
+		e.Screen.SetContent(startX+dx, bottomY, '─', nil, borderStyle)
+	}
+	footerText := " [↑/↓ navegar | ↵ ejecutar | Esc cancelar] "
+	if modalWidth > len([]rune(footerText))+6 {
+		footerX := startX + (modalWidth-len([]rune(footerText)))/2
+		e.drawString(footerX, bottomY, footerText, e.Theme.LineNumberStyle)
+	}
+	e.Screen.SetContent(startX+modalWidth-1, bottomY, '╯', nil, borderStyle)
+
+	e.PromptCursor = startX + 4 + len([]rune(e.PromptText))
+	e.Screen.ShowCursor(e.PromptCursor, startY+1)
+}
+
+func (e *Editor) drawFileFinderModal(width, height int) {
+	modalWidth := 72
+	if width < 76 {
+		modalWidth = width - 4
+	}
+	if modalWidth < 30 {
+		modalWidth = width
+	}
+
+	startX := (width - modalWidth) / 2
+	startY := 2
+	maxItems := 8
+	if height < 16 {
+		maxItems = 4
+	}
+
+	totalItems := len(e.FilteredFiles)
+	visibleItems := totalItems
+	if visibleItems > maxItems {
+		visibleItems = maxItems
+	}
+	if visibleItems == 0 {
+		visibleItems = 1
+	}
+
+	modalHeight := 4 + visibleItems
+
+	boxStyle := e.Theme.StatusBarStyle
+	borderStyle := e.Theme.StatusBarStyle
+	inputStyle := e.Theme.DefaultStyle
+
+	for dy := 0; dy < modalHeight; dy++ {
+		for dx := 0; dx < modalWidth; dx++ {
+			e.Screen.SetContent(startX+dx, startY+dy, ' ', nil, boxStyle)
+		}
+	}
+
+	e.Screen.SetContent(startX, startY, '╭', nil, borderStyle)
+	title := fmt.Sprintf(" Abrir Archivo (%d en espacio de trabajo) ", len(e.WorkspaceFiles))
+	for dx := 1; dx < modalWidth-1; dx++ {
+		e.Screen.SetContent(startX+dx, startY, '─', nil, borderStyle)
+	}
+	e.drawString(startX+3, startY, title, e.Theme.GetSyntaxStyle("function").Bold(true))
+	e.Screen.SetContent(startX+modalWidth-1, startY, '╮', nil, borderStyle)
+
+	e.Screen.SetContent(startX, startY+1, '│', nil, borderStyle)
+	for dx := 1; dx < modalWidth-1; dx++ {
+		e.Screen.SetContent(startX+dx, startY+1, ' ', nil, inputStyle)
+	}
+	e.drawString(startX+2, startY+1, "> ", e.Theme.GetSyntaxStyle("keyword").Bold(true))
+	e.drawString(startX+4, startY+1, e.PromptText, inputStyle)
+	e.Screen.SetContent(startX+modalWidth-1, startY+1, '│', nil, borderStyle)
+
+	e.Screen.SetContent(startX, startY+2, '├', nil, borderStyle)
+	for dx := 1; dx < modalWidth-1; dx++ {
+		e.Screen.SetContent(startX+dx, startY+2, '─', nil, borderStyle)
+	}
+	e.Screen.SetContent(startX+modalWidth-1, startY+2, '┤', nil, borderStyle)
+
+	if e.FileFinderIdx < e.FileFinderScroll {
+		e.FileFinderScroll = e.FileFinderIdx
+	}
+	if e.FileFinderIdx >= e.FileFinderScroll+maxItems {
+		e.FileFinderScroll = e.FileFinderIdx - maxItems + 1
+	}
+
+	itemRow := startY + 3
+	if totalItems == 0 {
+		e.Screen.SetContent(startX, itemRow, '│', nil, borderStyle)
+		e.drawString(startX+4, itemRow, "(No se encontraron archivos coincidentes)", e.Theme.LineNumberStyle)
+		e.Screen.SetContent(startX+modalWidth-1, itemRow, '│', nil, borderStyle)
+	} else {
+		for i := 0; i < visibleItems; i++ {
+			actualIdx := e.FileFinderScroll + i
+			if actualIdx >= totalItems {
+				break
+			}
+			filePath := e.FilteredFiles[actualIdx]
+			isSelected := (actualIdx == e.FileFinderIdx)
+
+			itemStyle := boxStyle
+			if isSelected {
+				itemStyle = e.Theme.SelectionStyle
+			}
+
+			for dx := 1; dx < modalWidth-1; dx++ {
+				e.Screen.SetContent(startX+dx, itemRow+i, ' ', nil, itemStyle)
+			}
+
+			e.Screen.SetContent(startX, itemRow+i, '│', nil, borderStyle)
+
+			prefix := "  "
+			if isSelected {
+				prefix = "▶ "
+			}
+			e.drawString(startX+2, itemRow+i, prefix+filePath, itemStyle)
+			e.Screen.SetContent(startX+modalWidth-1, itemRow+i, '│', nil, borderStyle)
+		}
+	}
+
+	bottomY := startY + modalHeight - 1
+	e.Screen.SetContent(startX, bottomY, '╰', nil, borderStyle)
+	for dx := 1; dx < modalWidth-1; dx++ {
+		e.Screen.SetContent(startX+dx, bottomY, '─', nil, borderStyle)
+	}
+	footerText := " [↑/↓ navegar | ↵ abrir | Esc cancelar] "
+	if modalWidth > len([]rune(footerText))+6 {
+		footerX := startX + (modalWidth-len([]rune(footerText)))/2
+		e.drawString(footerX, bottomY, footerText, e.Theme.LineNumberStyle)
+	}
+	e.Screen.SetContent(startX+modalWidth-1, bottomY, '╯', nil, borderStyle)
+
+	e.PromptCursor = startX + 4 + len([]rune(e.PromptText))
+	e.Screen.ShowCursor(e.PromptCursor, startY+1)
 }
 
 func (e *Editor) drawString(x, y int, str string, st tcell.Style) {
@@ -404,7 +787,17 @@ func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 		return
 	}
 
-	// Teclas de control básicas
+	// Manejo de Selección con Shift + Teclas de navegación
+	if ev.Modifiers()&tcell.ModShift != 0 {
+		if !e.Selecting {
+			e.Selecting = true
+			e.SelectAnchorRow = e.Buffer.CursorRow
+			e.SelectAnchorCol = e.Buffer.CursorCol
+		}
+	} else if ev.Key() == tcell.KeyUp || ev.Key() == tcell.KeyDown || ev.Key() == tcell.KeyLeft || ev.Key() == tcell.KeyRight || ev.Key() == tcell.KeyHome || ev.Key() == tcell.KeyEnd {
+		e.Selecting = false
+	}
+
 	switch ev.Key() {
 	case tcell.KeyUp:
 		e.Buffer.CursorRow--
@@ -435,18 +828,29 @@ func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 		e.Buffer.CursorCol = len([]rune(e.Buffer.Lines[e.Buffer.CursorRow]))
 	case tcell.KeyPgUp:
 		_, height := e.Screen.Size()
-		e.Buffer.CursorRow -= height - 2
+		e.Buffer.CursorRow -= height - 3
 		e.Buffer.ClampCursor()
 	case tcell.KeyPgDn:
 		_, height := e.Screen.Size()
-		e.Buffer.CursorRow += height - 2
+		e.Buffer.CursorRow += height - 3
 		e.Buffer.ClampCursor()
 	case tcell.KeyEnter:
+		if e.Selecting {
+			e.deleteSelection()
+		}
 		e.Buffer.SplitLine(e.Config.AutoIndent)
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		e.Buffer.DeleteRune()
+		if e.Selecting {
+			e.deleteSelection()
+		} else {
+			e.Buffer.DeleteRune()
+		}
 	case tcell.KeyDelete:
-		e.Buffer.DeleteForwardRune()
+		if e.Selecting {
+			e.deleteSelection()
+		} else {
+			e.Buffer.DeleteForwardRune()
+		}
 	case tcell.KeyTab:
 		if e.Config.ExpandTabs {
 			for i := 0; i < e.Config.TabSize; i++ {
@@ -456,6 +860,9 @@ func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 			e.Buffer.InsertRune('\t')
 		}
 	case tcell.KeyRune:
+		if e.Selecting {
+			e.deleteSelection()
+		}
 		e.Buffer.InsertRune(ev.Rune())
 		e.QuitWarned = false
 	}
@@ -473,11 +880,15 @@ func (e *Editor) handlePromptKey(ev *tcell.EventKey) {
 	case tcell.KeyUp:
 		if e.PromptMode == PromptPalette && len(e.FilteredItems) > 0 {
 			e.PaletteIndex = (e.PaletteIndex - 1 + len(e.FilteredItems)) % len(e.FilteredItems)
+		} else if e.PromptMode == PromptFileFinder && len(e.FilteredFiles) > 0 {
+			e.FileFinderIdx = (e.FileFinderIdx - 1 + len(e.FilteredFiles)) % len(e.FilteredFiles)
 		}
 
 	case tcell.KeyDown:
 		if e.PromptMode == PromptPalette && len(e.FilteredItems) > 0 {
 			e.PaletteIndex = (e.PaletteIndex + 1) % len(e.FilteredItems)
+		} else if e.PromptMode == PromptFileFinder && len(e.FilteredFiles) > 0 {
+			e.FileFinderIdx = (e.FileFinderIdx + 1) % len(e.FilteredFiles)
 		}
 
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
@@ -486,6 +897,10 @@ func (e *Editor) handlePromptKey(ev *tcell.EventKey) {
 			e.PromptText = string(runes[:len(runes)-1])
 			if e.PromptMode == PromptPalette {
 				e.updatePaletteFilter()
+			} else if e.PromptMode == PromptFileFinder {
+				e.FilteredFiles = FilterFiles(e.WorkspaceFiles, e.PromptText)
+				e.FileFinderIdx = 0
+				e.FileFinderScroll = 0
 			}
 		}
 
@@ -493,6 +908,10 @@ func (e *Editor) handlePromptKey(ev *tcell.EventKey) {
 		e.PromptText += string(ev.Rune())
 		if e.PromptMode == PromptPalette {
 			e.updatePaletteFilter()
+		} else if e.PromptMode == PromptFileFinder {
+			e.FilteredFiles = FilterFiles(e.WorkspaceFiles, e.PromptText)
+			e.FileFinderIdx = 0
+			e.FileFinderScroll = 0
 		}
 	}
 }
@@ -507,6 +926,7 @@ func (e *Editor) updatePaletteFilter() {
 	}
 	e.FilteredItems = filtered
 	e.PaletteIndex = 0
+	e.PaletteScroll = 0
 }
 
 func (e *Editor) submitPrompt() {
@@ -541,27 +961,90 @@ func (e *Editor) submitPrompt() {
 
 	case PromptPalette:
 		e.PromptMode = PromptNone
-		if len(e.FilteredItems) > 0 {
+		if len(e.FilteredItems) > 0 && e.PaletteIndex < len(e.FilteredItems) {
 			selected := e.FilteredItems[e.PaletteIndex]
 			e.executeAction(selected.Action)
+		}
+
+	case PromptFileFinder:
+		e.PromptMode = PromptNone
+		if len(e.FilteredFiles) > 0 && e.FileFinderIdx < len(e.FilteredFiles) {
+			target := e.FilteredFiles[e.FileFinderIdx]
+			e.OpenFile(target)
 		}
 	}
 }
 
 func (e *Editor) executeAction(action string) {
 	switch action {
+	case "file:find":
+		e.WorkspaceFiles = ScanWorkspaceFiles(3000)
+		e.FilteredFiles = FilterFiles(e.WorkspaceFiles, "")
+		e.FileFinderIdx = 0
+		e.FileFinderScroll = 0
+		e.PromptMode = PromptFileFinder
+		e.PromptText = ""
+
+	case "buffer:new":
+		newBuf := buffer.NewEmptyBuffer()
+		e.Buffers = append(e.Buffers, newBuf)
+		e.SwitchToBuffer(len(e.Buffers) - 1)
+		e.SetStatus("Nueva pestaña creada", 1*time.Second)
+
+	case "buffer:close":
+		e.CloseActiveBuffer()
+
+	case "buffer:next":
+		if len(e.Buffers) > 1 {
+			e.SwitchToBuffer((e.ActiveBufferIdx + 1) % len(e.Buffers))
+		}
+
+	case "selection:copy":
+		text := e.getSelectedText()
+		if text == "" && e.Buffer.CursorRow < e.Buffer.LineCount() {
+			text = e.Buffer.Lines[e.Buffer.CursorRow]
+		}
+		e.Clipboard = text
+		e.SetStatus("Copiado al portapapeles", 1*time.Second)
+
+	case "selection:cut":
+		text := e.getSelectedText()
+		if text != "" {
+			e.Clipboard = text
+			e.deleteSelection()
+			e.SetStatus("Cortado al portapapeles", 1*time.Second)
+		} else if e.Buffer.CursorRow < e.Buffer.LineCount() {
+			e.Clipboard = e.Buffer.Lines[e.Buffer.CursorRow]
+			e.Buffer.DeleteLine()
+			e.SetStatus("Línea cortada", 1*time.Second)
+		}
+
+	case "selection:paste":
+		e.pasteText(e.Clipboard)
+		e.SetStatus("Pegado desde portapapeles", 1*time.Second)
+
 	case "buffer:save":
 		e.saveFile()
+
 	case "buffer:save_as":
 		e.PromptMode = PromptSaveAs
 		e.PromptText = e.Buffer.FilePath
+
 	case "app:quit":
-		if e.Buffer.Modified && !e.QuitWarned {
+		hasModified := false
+		for _, b := range e.Buffers {
+			if b.Modified {
+				hasModified = true
+				break
+			}
+		}
+		if hasModified && !e.QuitWarned {
 			e.QuitWarned = true
-			e.SetStatus("¡Cambios sin guardar! Presiona Ctrl+Q de nuevo para salir", 3*time.Second)
+			e.SetStatus("¡Pestañas con cambios sin guardar! Presiona Ctrl+Q de nuevo para salir", 3*time.Second)
 			return
 		}
 		e.Running = false
+
 	case "buffer:undo":
 		if e.Buffer.Undo() {
 			e.SetStatus("Deshecho", 1*time.Second)
@@ -605,6 +1088,146 @@ func (e *Editor) executeAction(action string) {
 	}
 }
 
+func (e *Editor) isCellSelected(row, col int) bool {
+	if !e.Selecting {
+		return false
+	}
+	startRow, startCol := e.SelectAnchorRow, e.SelectAnchorCol
+	endRow, endCol := e.Buffer.CursorRow, e.Buffer.CursorCol
+
+	if startRow > endRow || (startRow == endRow && startCol > endCol) {
+		startRow, startCol, endRow, endCol = endRow, endCol, startRow, startCol
+	}
+
+	if row < startRow || row > endRow {
+		return false
+	}
+	if row == startRow && row == endRow {
+		return col >= startCol && col < endCol
+	}
+	if row == startRow {
+		return col >= startCol
+	}
+	if row == endRow {
+		return col < endCol
+	}
+	return true
+}
+
+func (e *Editor) getSelectedText() string {
+	if !e.Selecting {
+		return ""
+	}
+	startRow, startCol := e.SelectAnchorRow, e.SelectAnchorCol
+	endRow, endCol := e.Buffer.CursorRow, e.Buffer.CursorCol
+
+	if startRow > endRow || (startRow == endRow && startCol > endCol) {
+		startRow, startCol, endRow, endCol = endRow, endCol, startRow, startCol
+	}
+
+	if startRow == endRow {
+		runes := []rune(e.Buffer.Lines[startRow])
+		if startCol > len(runes) {
+			startCol = len(runes)
+		}
+		if endCol > len(runes) {
+			endCol = len(runes)
+		}
+		return string(runes[startCol:endCol])
+	}
+
+	var parts []string
+	firstRunes := []rune(e.Buffer.Lines[startRow])
+	if startCol < len(firstRunes) {
+		parts = append(parts, string(firstRunes[startCol:]))
+	} else {
+		parts = append(parts, "")
+	}
+
+	for r := startRow + 1; r < endRow; r++ {
+		parts = append(parts, e.Buffer.Lines[r])
+	}
+
+	lastRunes := []rune(e.Buffer.Lines[endRow])
+	if endCol > len(lastRunes) {
+		endCol = len(lastRunes)
+	}
+	parts = append(parts, string(lastRunes[:endCol]))
+
+	return strings.Join(parts, "\n")
+}
+
+func (e *Editor) deleteSelection() {
+	if !e.Selecting {
+		return
+	}
+	startRow, startCol := e.SelectAnchorRow, e.SelectAnchorCol
+	endRow, endCol := e.Buffer.CursorRow, e.Buffer.CursorCol
+
+	if startRow > endRow || (startRow == endRow && startCol > endCol) {
+		startRow, startCol, endRow, endCol = endRow, endCol, startRow, startCol
+	}
+
+	firstRunes := []rune(e.Buffer.Lines[startRow])
+	if startCol > len(firstRunes) {
+		startCol = len(firstRunes)
+	}
+	lastRunes := []rune(e.Buffer.Lines[endRow])
+	if endCol > len(lastRunes) {
+		endCol = len(lastRunes)
+	}
+
+	merged := string(firstRunes[:startCol]) + string(lastRunes[endCol:])
+	newLines := append(e.Buffer.Lines[:startRow], append([]string{merged}, e.Buffer.Lines[endRow+1:]...)...)
+	e.Buffer.Lines = newLines
+	e.Buffer.CursorRow = startRow
+	e.Buffer.CursorCol = startCol
+	e.Buffer.ClampCursor()
+	e.Selecting = false
+	e.Buffer.Modified = true
+}
+
+func (e *Editor) pasteText(text string) {
+	if text == "" {
+		return
+	}
+	if e.Selecting {
+		e.deleteSelection()
+	}
+
+	lines := strings.Split(text, "\n")
+	if len(lines) == 1 {
+		for _, r := range lines[0] {
+			e.Buffer.InsertRune(r)
+		}
+		return
+	}
+
+	currRunes := []rune(e.Buffer.Lines[e.Buffer.CursorRow])
+	col := e.Buffer.CursorCol
+	if col > len(currRunes) {
+		col = len(currRunes)
+	}
+	left := string(currRunes[:col])
+	right := string(currRunes[col:])
+
+	var newLines []string
+	newLines = append(newLines, e.Buffer.Lines[:e.Buffer.CursorRow]...)
+	newLines = append(newLines, left+lines[0])
+	for i := 1; i < len(lines)-1; i++ {
+		newLines = append(newLines, lines[i])
+	}
+	lastLine := lines[len(lines)-1]
+	newLines = append(newLines, lastLine+right)
+	newLines = append(newLines, e.Buffer.Lines[e.Buffer.CursorRow+1:]...)
+
+	e.Buffer.Lines = newLines
+	e.Buffer.CursorRow = e.Buffer.CursorRow + len(lines) - 1
+	e.Buffer.CursorCol = len([]rune(lastLine))
+	e.Buffer.ClampCursor()
+	e.Buffer.Modified = true
+}
+
 func (e *Editor) saveFile() {
 	if e.Buffer.FilePath == "" {
 		e.PromptMode = PromptSaveAs
@@ -612,7 +1235,6 @@ func (e *Editor) saveFile() {
 		return
 	}
 
-	// Ejecutar ganchos on_save de los plugins aplicables
 	lang := ""
 	if e.CurrentSyntax != nil {
 		lang = e.CurrentSyntax.Name
@@ -628,7 +1250,6 @@ func (e *Editor) saveFile() {
 				formatted, err := plugin.ExecutePipeBuffer(hook.Command, content)
 				if err == nil {
 					content = formatted
-					// Actualizar líneas del buffer con el formato
 					e.Buffer.Lines = strings.Split(strings.TrimRight(content, "\n"), "\n")
 					e.Buffer.ClampCursor()
 				} else {
@@ -671,41 +1292,54 @@ func (e *Editor) runPluginCommand(cmdID string) {
 }
 
 func (e *Editor) findNext(term string) {
+	if term == "" || e.Buffer.LineCount() == 0 {
+		return
+	}
+
+	lowerTerm := strings.ToLower(term)
 	startRow := e.Buffer.CursorRow
 	startCol := e.Buffer.CursorCol + 1
 
 	for r := startRow; r < e.Buffer.LineCount(); r++ {
-		line := e.Buffer.Lines[r]
-		searchFrom := 0
+		lineRunes := []rune(e.Buffer.Lines[r])
+		from := 0
 		if r == startRow {
-			searchFrom = startCol
+			from = startCol
 		}
-		if searchFrom < len(line) {
-			idx := strings.Index(strings.ToLower(line[searchFrom:]), strings.ToLower(term))
-			if idx != -1 {
+		if from < len(lineRunes) {
+			subStr := strings.ToLower(string(lineRunes[from:]))
+			byteIdx := strings.Index(subStr, lowerTerm)
+			if byteIdx != -1 {
+				runeOffset := len([]rune(subStr[:byteIdx]))
 				e.Buffer.CursorRow = r
-				e.Buffer.CursorCol = searchFrom + idx
+				e.Buffer.CursorCol = from + runeOffset
 				e.Buffer.ClampCursor()
-				e.SetStatus(fmt.Sprintf("Coincidencia en fila %d", r+1), 2*time.Second)
+				e.SetStatus(fmt.Sprintf("Coincidencia en línea %d", r+1), 2*time.Second)
 				return
 			}
 		}
 	}
 
-	// Si no se encuentra abajo, buscar desde el inicio hasta el cursor
-	for r := 0; r <= startRow; r++ {
-		line := e.Buffer.Lines[r]
-		limit := len(line)
+	for r := 0; r <= startRow && r < e.Buffer.LineCount(); r++ {
+		lineRunes := []rune(e.Buffer.Lines[r])
+		to := len(lineRunes)
 		if r == startRow {
-			limit = startCol
+			to = startCol
+			if to > len(lineRunes) {
+				to = len(lineRunes)
+			}
 		}
-		idx := strings.Index(strings.ToLower(line[:limit]), strings.ToLower(term))
-		if idx != -1 {
-			e.Buffer.CursorRow = r
-			e.Buffer.CursorCol = idx
-			e.Buffer.ClampCursor()
-			e.SetStatus(fmt.Sprintf("Coincidencia en fila %d (bucle)", r+1), 2*time.Second)
-			return
+		if to > 0 {
+			subStr := strings.ToLower(string(lineRunes[:to]))
+			byteIdx := strings.Index(subStr, lowerTerm)
+			if byteIdx != -1 {
+				runeOffset := len([]rune(subStr[:byteIdx]))
+				e.Buffer.CursorRow = r
+				e.Buffer.CursorCol = runeOffset
+				e.Buffer.ClampCursor()
+				e.SetStatus(fmt.Sprintf("Coincidencia en línea %d (bucle)", r+1), 2*time.Second)
+				return
+			}
 		}
 	}
 
@@ -738,16 +1372,30 @@ func keyToString(ev *tcell.EventKey) string {
 		return "Ctrl+G"
 	case tcell.KeyCtrlK:
 		return "Ctrl+K"
+	case tcell.KeyCtrlN:
+		return "Ctrl+N"
+	case tcell.KeyCtrlO:
+		return "Ctrl+O"
 	case tcell.KeyCtrlP:
 		return "Ctrl+P"
 	case tcell.KeyCtrlQ:
 		return "Ctrl+Q"
 	case tcell.KeyCtrlS:
 		return "Ctrl+S"
+	case tcell.KeyCtrlV:
+		return "Ctrl+V"
+	case tcell.KeyCtrlW:
+		return "Ctrl+W"
+	case tcell.KeyCtrlX:
+		return "Ctrl+X"
 	case tcell.KeyCtrlY:
 		return "Ctrl+Y"
 	case tcell.KeyCtrlZ:
 		return "Ctrl+Z"
+	case tcell.KeyTab:
+		if ev.Modifiers()&tcell.ModCtrl != 0 {
+			return "Ctrl+Tab"
+		}
 	}
 
 	if ev.Key() == tcell.KeyRune {
