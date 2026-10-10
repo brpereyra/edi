@@ -486,7 +486,7 @@ func (e *Editor) drawSidebar(treeWidth, height int) {
 	for x := 0; x < treeWidth; x++ {
 		e.Screen.SetContent(x, 0, ' ', nil, titleStyle)
 	}
-	e.drawString(1, 0, "📁 EXPLORADOR", titleStyle)
+	e.drawString(1, 0, "EXPLORADOR", titleStyle)
 
 	// Separador vertical en x = treeWidth
 	for y := 0; y < height-1; y++ {
@@ -622,7 +622,7 @@ func (e *Editor) drawStatusBar(width, y int) {
 	treeStatus := ""
 	if e.SidebarOpen {
 		if e.SidebarFocus {
-			treeStatus = " [Árbol ⚲] "
+			treeStatus = " [Árbol: Foco] "
 		} else {
 			treeStatus = " [Árbol] "
 		}
@@ -946,7 +946,7 @@ func (e *Editor) drawSaveAsModal(width, height int) {
 
 	// Borde superior
 	e.Screen.SetContent(startX, startY, '╭', nil, borderStyle)
-	title := " 💾 Guardar Archivo (Terminal) "
+	title := " Guardar Archivo "
 	for dx := 1; dx < modalWidth-1; dx++ {
 		e.Screen.SetContent(startX+dx, startY, '─', nil, borderStyle)
 	}
@@ -1732,7 +1732,7 @@ func (e *Editor) saveFile() {
 	} else {
 		e.detectCurrentSyntax()
 		e.QuitWarned = false
-		e.SetStatus(fmt.Sprintf("✓ Guardado '%s' (%d líneas)", filepath.Base(e.Buffer.FilePath), e.Buffer.LineCount()), 2*time.Second)
+		e.SetStatus(fmt.Sprintf("Guardado '%s' (%d líneas)", filepath.Base(e.Buffer.FilePath), e.Buffer.LineCount()), 2*time.Second)
 		e.WorkspaceFiles = ScanWorkspaceFiles(3000)
 		if e.FileTree != nil {
 			e.FileTree.Refresh()

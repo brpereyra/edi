@@ -1,28 +1,28 @@
-# edi ⚡
+# edi
 
 Un editor de texto en consola (TUI) moderno, rápido, altamente personalizable y diseñado en **Go**. Cero dependencias externas en tiempo de ejecución, empaquetado como un único binario estático ideal para desarrollo local y servidores remotos.
 
 ---
 
-## ✨ Características
+## Características
 
-- 🚀 **Arranque instantáneo**: < 10 ms de tiempo de inicio.
-- 📦 **Binario estático sin CGO**: Distribución sin fricción mediante `scp`, `curl` o `go install` en Linux, macOS y Windows.
-- 🎨 **Paleta TrueColor (24-bit)**: Soporte completo de temas personalizados (`~/.edi-config/themes/*.json`) con Drácula y Monokai incluidos de fábrica.
-- 🔍 **Resaltado de sintaxis declarativo**: Agrega soporte para cualquier lenguaje simplemente colocando un archivo `.json` en `~/.edi-config/syntax/`.
-- ⌨️ **Atajos de teclado configurables**: Mapeo completo en `~/.edi-config/keybindings.json` (soporta formato JSONC con comentarios `//`).
-- 🌳 **Explorador de Archivos en Panel Lateral (`Ctrl+B`)**: Árbol jerárquico interactivo con carpetas expandibles (`▸`/`▾`), navegación con flechas y apertura directa en pestañas.
-- 📁 **Apertura de Carpetas CLI (`edi .`)**: Abre un proyecto completo directamente desde la terminal abriendo el explorador lateral.
-- 🧭 **Paleta de Comandos Modal (`Ctrl+P`)**: Ventana flotante interactiva con navegación `↑`/`↓`, búsqueda difusa y cambio de temas en caliente.
-- 📂 **Buscador Rápido de Archivos (`Ctrl+O`)**: Selector difuso instantáneo que descubre archivos en el proyecto ignorando `.git` o dependencias.
-- 📑 **Pestañas y Múltiples Buffers (`Ctrl+N`, `Ctrl+W`, `Ctrl+Tab`)**: Barra superior visual con soporte para múltiples archivos simultáneos e indicador de estado `*`.
-- ✂️ **Selección de Texto y Portapapeles (`Ctrl+C`, `Ctrl+X`, `Ctrl+V`)**: Selección multi-línea con `Shift + Flechas`, copiar, cortar y pegar.
-- ↩️ **Historial Undo/Redo**: Deshacer (`Ctrl+Z`) y Rehacer (`Ctrl+Y`) multinivel.
-- 🗂️ **Defaults Embebidos**: El binario incluye temas, sintaxis y atajos compilados internamente con `//go:embed`. Funciona de inmediato sin necesidad de crear archivos previos.
+- **Arranque instantáneo**: < 10 ms de tiempo de inicio.
+- **Binario estático sin CGO**: Distribución sin fricción mediante `scp`, `curl` o `go install` en Linux, macOS y Windows.
+- **Paleta TrueColor (24-bit)**: Soporte completo de temas personalizados (`~/.edi-config/themes/*.json`) con Drácula y Monokai incluidos de fábrica.
+- **Resaltado de sintaxis declarativo**: Agrega soporte para cualquier lenguaje simplemente colocando un archivo `.json` en `~/.edi-config/syntax/`.
+- **Atajos de teclado configurables**: Mapeo completo en `~/.edi-config/keybindings.json` (soporta formato JSONC con comentarios `//`).
+- **Explorador de Archivos en Panel Lateral (`Ctrl+B`)**: Árbol jerárquico interactivo con carpetas expandibles (`▸`/`▾`), navegación con flechas y apertura directa en pestañas.
+- **Apertura de Carpetas CLI (`edi .`)**: Abre un proyecto completo directamente desde la terminal abriendo el explorador lateral.
+- **Paleta de Comandos Modal (`Ctrl+P`)**: Ventana flotante interactiva con navegación `↑`/`↓`, búsqueda difusa y cambio de temas en caliente.
+- **Buscador Rápido de Archivos (`Ctrl+O`)**: Selector difuso instantáneo que descubre archivos en el proyecto ignorando `.git` o dependencias.
+- **Pestañas y Múltiples Buffers (`Ctrl+N`, `Ctrl+W`, `Ctrl+Tab`, `Alt+1..9`)**: Barra superior visual con soporte para múltiples archivos simultáneos e indicador de estado `*`.
+- **Selección de Texto y Portapapeles (`Ctrl+C`, `Ctrl+X`, `Ctrl+V`)**: Selección multi-línea con `Shift + Flechas`, copiar, cortar y pegar.
+- **Historial Undo/Redo**: Deshacer (`Ctrl+Z`) y Rehacer (`Ctrl+Y`) multinivel.
+- **Defaults Embebidos**: El binario incluye temas, sintaxis y atajos compilados internamente con `//go:embed`. Funciona de inmediato sin necesidad de crear archivos previos.
 
 ---
 
-## 📂 Jerarquía de Configuración (`~/.edi-config/`)
+## Jerarquía de Configuración (`~/.edi-config/`)
 
 El editor busca su configuración en el siguiente orden de prioridad:
 
@@ -55,17 +55,19 @@ Para inicializar automáticamente esta estructura en tu máquina:
 
 ---
 
-## 🛠️ Atajos de Teclado Predeterminados
+## Atajos de Teclado Predeterminados
 
 | Atajo | Acción |
 | :--- | :--- |
 | `Ctrl+P` | Abrir la Paleta de Comandos (Modal flotante) |
 | `Ctrl+O` | Buscador rápido de archivos del proyecto |
 | `Ctrl+B` | Alternar Explorador de archivos (Panel lateral) |
-| `Ctrl+S` | Guardar archivo (ejecuta formateadores si existen) |
-| `Ctrl+N` | Abrir nueva pestaña vacía |
+| `Ctrl+S` / `F2` | Guardar archivo (pregunta nombre en terminal si es nuevo) |
+| `Ctrl+N` | Abrir nueva pestaña vacía (tecla 'a'/'n' en explorador) |
 | `Ctrl+W` | Cerrar pestaña activa (con advertencia si no está guardada) |
-| `Ctrl+Tab` | Alternar entre pestañas abiertas |
+| `Ctrl+Tab` / `Alt+Right` | Pestaña siguiente |
+| `Alt+Left` | Pestaña anterior |
+| `Alt+1` a `Alt+9` | Ir a pestaña 1..9 |
 | `Shift + Flechas` | Seleccionar texto (multi-línea) |
 | `Ctrl+C` | Copiar selección (o línea actual si no hay selección) |
 | `Ctrl+X` | Cortar selección (o línea actual) |
@@ -76,11 +78,12 @@ Para inicializar automáticamente esta estructura en tu máquina:
 | `Ctrl+Y` | Rehacer (Redo) |
 | `Ctrl+D` | Duplicar línea actual |
 | `Ctrl+K` | Eliminar línea actual |
+| `F1` | Ayuda y documentación integrada |
 | `Ctrl+Q` | Salir de edi (con confirmación de seguridad) |
 
 ---
 
-## 🧩 Cómo Agregar un Nuevo Lenguaje (`syntax/`)
+## Cómo Agregar un Nuevo Lenguaje (`syntax/`)
 
 Para agregar resaltado a un lenguaje nuevo (por ejemplo, Rust), simplemente crea `~/.edi-config/syntax/rust.json`:
 
@@ -117,7 +120,7 @@ Para agregar resaltado a un lenguaje nuevo (por ejemplo, Rust), simplemente crea
 
 ---
 
-## 🎨 Cómo Agregar un Nuevo Tema (`themes/`)
+## Cómo Agregar un Nuevo Tema (`themes/`)
 
 Crea `~/.edi-config/themes/nord.json`:
 
@@ -148,7 +151,7 @@ Crea `~/.edi-config/themes/nord.json`:
 
 ---
 
-## 🚀 Compilación e Instalación
+## Compilación e Instalación
 
 ### Compilar binario local:
 ```bash

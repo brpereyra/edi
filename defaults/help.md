@@ -1,4 +1,4 @@
-# Guía y Documentación de edi ⚡
+# Guía y Documentación de edi
 
 Bienvenido a **edi**, un editor de texto para consola (TUI) rápido, portable y extensible creado en Go.
 
