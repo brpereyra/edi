@@ -65,7 +65,7 @@ jobs:
     name: Publish GitHub Release
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -76,10 +76,23 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          generate_release_notes: true
-          draft: false
-          prerelease: false
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls -lh dist/
+          TAG="${{ github.ref_name }}"
+          if [ -z "$TAG" ] || [ "$TAG" = "main" ]; then
+            TAG="v0.1.0"
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "El release $TAG ya existe. Subiendo y actualizando binarios..."
+            gh release upload "$TAG" dist/* --clobber
+          else
+            echo "Creando release $TAG y subiendo binarios..."
+            gh release create "$TAG" dist/* \
+              --title "edi $TAG" \
+              --generate-notes
+          fi
+
