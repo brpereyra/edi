@@ -49,7 +49,11 @@ jobs:
           GOARCH: ${{ matrix.arch }}
         run: |
           mkdir -p dist
-          go build -ldflags="-s -w" -o "dist/${{ matrix.name }}" ./cmd/edi
+          TAG="${{ github.ref_name }}"
+          if [ -z "$TAG" ] || [ "$TAG" = "main" ]; then
+            TAG="v0.1.0"
+          fi
+          go build -ldflags="-s -w -X edi/internal/version.Version=${TAG}" -o "dist/${{ matrix.name }}" ./cmd/edi
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

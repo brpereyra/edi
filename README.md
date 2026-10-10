@@ -169,6 +169,26 @@ go install github.com/brpereyra/edi/cmd/edi@latest
 
 ---
 
+## Verificación de Versión y Actualizaciones
+
+### Consultar la versión instalada:
+```bash
+edi version
+# o también:
+edi --version
+edi -v
+```
+
+### Actualizar `edi` sin tocar tus configuraciones:
+```bash
+edi update
+# o también:
+edi --update
+```
+> **Preservación total de configuración**: El comando de actualización reemplaza únicamente el binario ejecutable. Todas tus configuraciones, atajos y temas personalizados en `~/.edi-config/` se conservan **100% intactos**.
+
+---
+
 ## Compilación Local desde el Código Fuente
 
 ### Compilar binario local:

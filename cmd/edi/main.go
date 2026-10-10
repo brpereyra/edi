@@ -8,27 +8,33 @@ import (
 	"edi/internal/buffer"
 	"edi/internal/config"
 	"edi/internal/editor"
+	"edi/internal/updater"
+	"edi/internal/version"
 
 	"github.com/gdamore/tcell/v2"
 )
 
-const version = "0.1.0"
-
 func printHelp() {
-	fmt.Printf(`edi v%s - Editor de texto en consola rápido, personalizable y portable en Go
+	fmt.Printf(`%s - Editor de texto en consola rápido, personalizable y portable en Go
 
 USO:
   edi [opciones] [archivo o carpeta]
+  edi update [--force]
+  edi version
 
 EJEMPLOS:
   edi main.go           Abre o crea un archivo
   edi .                 Abre la carpeta actual en el Explorador de Archivos lateral
   edi /ruta/a/proyecto  Abre un proyecto específico en el Explorador
   edi --init            Inicializa la configuración en ~/.edi-config/
+  edi --update          Actualiza edi a la última versión en GitHub (preserva tu config)
+  edi --version         Muestra la versión instalada y arquitectura
 
 OPCIONES:
   -h, --help            Muestra esta ayuda detallada y sale
   -v, --version         Muestra la versión de edi
+  -u, --update          Verifica y actualiza edi sin tocar tus configuraciones
+  --force               Fuerza la reinstalación al actualizar
   --init                Crea la carpeta ~/.edi-config/ con temas y sintaxis base
   --config-dir          Muestra la ruta de la configuración activa
 
@@ -59,16 +65,47 @@ PERSONALIZACIÓN (~/.edi-config/):
 
 DOCUMENTACIÓN INTERNA:
   Dentro de edi, presiona F1 o abre la paleta con Ctrl+P y selecciona 'Documentación y Ayuda'.
-`, version)
+`, version.FullVersion())
 }
 
 func main() {
+	// Soporte de subcomandos directos: 'edi version' y 'edi update'
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "version":
+			fmt.Println(version.FullVersion())
+			os.Exit(0)
+		case "update", "upgrade":
+			force := false
+			for _, a := range os.Args[2:] {
+				if a == "--force" || a == "-f" {
+					force = true
+					break
+				}
+			}
+			if err := updater.RunCLIUpdate(force); err != nil {
+				fmt.Fprintf(os.Stderr, "Error durante la actualización: %v\n", err)
+				os.Exit(1)
+			}
+			os.Exit(0)
+		}
+	}
+
 	flag.Usage = printHelp
 
 	initFlag := flag.Bool("init", false, "Inicializa la carpeta ~/.edi-config con plantillas predeterminadas")
+
 	var versionFlag bool
 	flag.BoolVar(&versionFlag, "version", false, "Muestra la versión de edi")
 	flag.BoolVar(&versionFlag, "v", false, "Muestra la versión de edi")
+
+	var updateFlag bool
+	flag.BoolVar(&updateFlag, "update", false, "Actualiza edi a la última versión disponible en GitHub")
+	flag.BoolVar(&updateFlag, "u", false, "Actualiza edi a la última versión disponible en GitHub")
+
+	var forceFlag bool
+	flag.BoolVar(&forceFlag, "force", false, "Fuerza la reinstalación de la versión más reciente")
+	flag.BoolVar(&forceFlag, "f", false, "Fuerza la reinstalación de la versión más reciente")
 
 	configFlag := flag.Bool("config-dir", false, "Muestra la ruta de configuración activa")
 
@@ -84,7 +121,15 @@ func main() {
 	}
 
 	if versionFlag {
-		fmt.Printf("edi v%s (Editor de texto rápido y portable en Go)\n", version)
+		fmt.Println(version.FullVersion())
+		os.Exit(0)
+	}
+
+	if updateFlag {
+		if err := updater.RunCLIUpdate(forceFlag); err != nil {
+			fmt.Fprintf(os.Stderr, "Error durante la actualización: %v\n", err)
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 

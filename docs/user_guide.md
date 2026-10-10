@@ -38,11 +38,12 @@ edi /ruta/a/mi-proyecto
 edi nuevo_archivo.txt
 ```
 
-### 1.2 Banderas de Línea de Comandos
-- `edi -h` / `edi --help` : Muestra el resumen de uso y atajos de teclado.
-- `edi -v` / `edi --version` : Muestra la versión actual de `edi`.
-- `edi --init` : Genera la estructura de configuración en `~/.edi-config/`.
-- `edi --config-dir` : Imprime la ruta de configuración activa en tu sistema.
+### 1.4 Banderas y Subcomandos CLI
+- `edi version` / `edi -v` / `edi --version` : Muestra la versión instalada y la arquitectura del sistema.
+- `edi update` / `edi --update` : Consulta GitHub Releases y actualiza el binario de forma segura sin sobreescribir tus configuraciones en `~/.edi-config/`.
+- `edi --init` : Genera la estructura de configuración inicial en `~/.edi-config/`.
+- `edi --config-dir` : Imprime la ruta de la configuración activa en tu máquina.
+- `edi -h` / `edi --help` : Muestra la ayuda detallada en la consola.
 
 ---
 

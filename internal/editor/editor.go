@@ -16,6 +16,8 @@ import (
 	"edi/internal/syntax"
 	"edi/internal/theme"
 	"edi/internal/tree"
+	"edi/internal/updater"
+	"edi/internal/version"
 
 	"github.com/gdamore/tcell/v2"
 )
@@ -181,6 +183,8 @@ func buildDefaultPalette() []PaletteItem {
 		{Title: "Git: Ver Diff de todo el proyecto", Action: "git:diff_project", Description: "Todos los cambios"},
 		{Title: "Git: Archivos modificados (Status)", Action: "git:status_files", Description: "Lista de archivos cambiados"},
 		{Title: "Git: Refrescar estado", Action: "git:refresh", Description: "Actualizar cambios"},
+		{Title: fmt.Sprintf("Acerca de edi (%s)", version.Version), Action: "app:about", Description: "Versión e información"},
+		{Title: "Buscar actualizaciones de edi", Action: "app:check_update", Description: "Consultar última versión en GitHub"},
 		{Title: "Salir de edi", Action: "app:quit", Description: "Ctrl+Q"},
 	}
 }
@@ -1844,6 +1848,23 @@ func (e *Editor) executeAction(action string) {
 		} else {
 			e.SetStatus("No se detectó repositorio Git activo", 2*time.Second)
 		}
+
+	case "app:about":
+		e.SetStatus(fmt.Sprintf("%s | github.com/%s", version.FullVersion(), updater.DefaultRepo), 4*time.Second)
+
+	case "app:check_update":
+		e.SetStatus("Verificando actualizaciones en GitHub...", 3*time.Second)
+		go func() {
+			rel, err := updater.CheckLatestRelease(updater.DefaultRepo)
+			if err != nil {
+				e.SetStatus(fmt.Sprintf("Actualización: %v", err), 4*time.Second)
+			} else if updater.IsNewer(rel.TagName, version.Version) {
+				e.SetStatus(fmt.Sprintf("¡Nueva versión %s disponible! Ejecuta 'edi --update' para actualizar.", rel.TagName), 6*time.Second)
+			} else {
+				e.SetStatus(fmt.Sprintf("edi está en la última versión (%s).", version.Version), 3*time.Second)
+			}
+			e.Screen.PostEvent(tcell.NewEventInterrupt(nil))
+		}()
 	default:
 		if strings.HasPrefix(action, "buffer:goto_idx:") {
 			idxStr := strings.TrimPrefix(action, "buffer:goto_idx:")

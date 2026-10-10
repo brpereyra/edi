@@ -163,10 +163,12 @@ edi main.go
 edi .
 edi /ruta/a/mi-proyecto
 
-# Ayuda y diagnóstico
-edi --help
+# Ayuda, versión y actualización
+edi version
 edi --version
+edi --update
 edi --config-dir
+edi --help
 ```
 
 ---
