@@ -2,6 +2,7 @@ package editor
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -144,7 +145,7 @@ func buildDefaultPalette() []PaletteItem {
 		{Title: "Cerrar pestaña", Action: "buffer:close", Description: "Ctrl+W"},
 		{Title: "Siguiente pestaña", Action: "buffer:next", Description: "Alt+Right / Ctrl+Tab"},
 		{Title: "Pestaña anterior", Action: "buffer:prev", Description: "Alt+Left"},
-		{Title: "Guardar archivo", Action: "buffer:save", Description: "Ctrl+S"},
+		{Title: "Guardar archivo", Action: "buffer:save", Description: "Ctrl+S / F2"},
 		{Title: "Guardar como...", Action: "buffer:save_as", Description: "Guardar con nuevo nombre"},
 		{Title: "Ir a línea...", Action: "buffer:goto_line", Description: "Ctrl+G"},
 		{Title: "Buscar texto...", Action: "buffer:find", Description: "Ctrl+F"},
@@ -448,6 +449,8 @@ func (e *Editor) Draw() {
 		e.drawPaletteModal(width, height)
 	} else if e.PromptMode == PromptFileFinder {
 		e.drawFileFinderModal(width, height)
+	} else if e.PromptMode == PromptSaveAs {
+		e.drawSaveAsModal(width, height)
 	} else if e.PromptMode != PromptNone {
 		e.Screen.ShowCursor(e.PromptCursor, height-1)
 	} else if e.SidebarOpen && e.SidebarFocus {
@@ -660,19 +663,14 @@ func (e *Editor) drawBottomBar(width, y int) {
 		e.drawString(0, y, prompt, e.Theme.DefaultStyle)
 		e.PromptCursor = len("Ir a línea: ") + len([]rune(e.PromptText))
 
-	case PromptSaveAs:
-		prompt := fmt.Sprintf("Guardar como: %s", e.PromptText)
-		e.drawString(0, y, prompt, e.Theme.DefaultStyle)
-		e.PromptCursor = len("Guardar como: ") + len([]rune(e.PromptText))
-
-	case PromptPalette, PromptFileFinder:
-		e.drawString(1, y, "Modal activo (Presiona Esc para cerrar)", e.Theme.LineNumberStyle)
+	case PromptPalette, PromptFileFinder, PromptSaveAs:
+		e.drawString(1, y, "Modal activo (Presiona Esc para cancelar)", e.Theme.LineNumberStyle)
 
 	default:
 		if e.StatusMessage != "" && time.Now().Before(e.StatusExpires) {
 			e.drawString(1, y, e.StatusMessage, e.Theme.GetSyntaxStyle("function"))
 		} else {
-			help := "^S: Guardar | ^O: Archivos | ^B: Árbol | ^P: Comandos | ^F: Buscar | ^W: Cerrar | Tab: Pestañas"
+			help := "^S/F2: Guardar | ^O: Archivos | ^B: Árbol | ^P: Comandos | ^F: Buscar | ^W: Cerrar | Tab: Pestañas"
 			e.drawString(1, y, help, e.Theme.LineNumberStyle)
 		}
 	}
@@ -919,6 +917,95 @@ func (e *Editor) drawFileFinderModal(width, height int) {
 	e.Screen.ShowCursor(e.PromptCursor, startY+1)
 }
 
+func (e *Editor) drawSaveAsModal(width, height int) {
+	modalWidth := 62
+	if width < 66 {
+		modalWidth = width - 4
+	}
+	if modalWidth < 30 {
+		modalWidth = width
+	}
+
+	startX := (width - modalWidth) / 2
+	startY := height / 3
+	if startY < 2 {
+		startY = 2
+	}
+
+	modalHeight := 6
+
+	boxStyle := e.Theme.StatusBarStyle
+	borderStyle := e.Theme.StatusBarStyle
+	inputStyle := e.Theme.DefaultStyle
+
+	for dy := 0; dy < modalHeight; dy++ {
+		for dx := 0; dx < modalWidth; dx++ {
+			e.Screen.SetContent(startX+dx, startY+dy, ' ', nil, boxStyle)
+		}
+	}
+
+	// Borde superior
+	e.Screen.SetContent(startX, startY, '╭', nil, borderStyle)
+	title := " 💾 Guardar Archivo (Terminal) "
+	for dx := 1; dx < modalWidth-1; dx++ {
+		e.Screen.SetContent(startX+dx, startY, '─', nil, borderStyle)
+	}
+	e.drawString(startX+3, startY, title, e.Theme.GetSyntaxStyle("function").Bold(true))
+	e.Screen.SetContent(startX+modalWidth-1, startY, '╮', nil, borderStyle)
+
+	// Fila 1: Indicación
+	e.Screen.SetContent(startX, startY+1, '│', nil, borderStyle)
+	label := " Ingrese el nombre o ruta del archivo:"
+	if len([]rune(label)) > modalWidth-2 {
+		label = string([]rune(label)[:modalWidth-3])
+	}
+	e.drawString(startX+2, startY+1, label, e.Theme.LineNumberStyle)
+	e.Screen.SetContent(startX+modalWidth-1, startY+1, '│', nil, borderStyle)
+
+	// Fila 2: Campo de entrada interactivo
+	e.Screen.SetContent(startX, startY+2, '│', nil, borderStyle)
+	for dx := 1; dx < modalWidth-1; dx++ {
+		e.Screen.SetContent(startX+dx, startY+2, ' ', nil, inputStyle)
+	}
+	e.drawString(startX+2, startY+2, "> ", e.Theme.GetSyntaxStyle("keyword").Bold(true))
+	e.drawString(startX+4, startY+2, e.PromptText, inputStyle)
+	e.Screen.SetContent(startX+modalWidth-1, startY+2, '│', nil, borderStyle)
+
+	// Fila 3: Separador
+	e.Screen.SetContent(startX, startY+3, '├', nil, borderStyle)
+	for dx := 1; dx < modalWidth-1; dx++ {
+		e.Screen.SetContent(startX+dx, startY+3, '─', nil, borderStyle)
+	}
+	e.Screen.SetContent(startX+modalWidth-1, startY+3, '┤', nil, borderStyle)
+
+	// Fila 4: Directorio actual de guardado
+	e.Screen.SetContent(startX, startY+4, '│', nil, borderStyle)
+	cwd, _ := os.Getwd()
+	folderInfo := fmt.Sprintf(" Guardar en: ./%s", filepath.Base(cwd))
+	if len([]rune(folderInfo)) > modalWidth-2 {
+		folderInfo = string([]rune(folderInfo)[:modalWidth-3])
+	}
+	e.drawString(startX+2, startY+4, folderInfo, e.Theme.LineNumberStyle)
+	e.Screen.SetContent(startX+modalWidth-1, startY+4, '│', nil, borderStyle)
+
+	// Fila 5: Borde inferior con atajos
+	bottomY := startY + 5
+	e.Screen.SetContent(startX, bottomY, '╰', nil, borderStyle)
+	for dx := 1; dx < modalWidth-1; dx++ {
+		e.Screen.SetContent(startX+dx, bottomY, '─', nil, borderStyle)
+	}
+	footerText := " [↵ Guardar automáticamente | Esc Cancelar] "
+	if modalWidth > len([]rune(footerText))+6 {
+		footerX := startX + (modalWidth-len([]rune(footerText)))/2
+		e.drawString(footerX, bottomY, footerText, e.Theme.LineNumberStyle)
+	}
+	e.Screen.SetContent(startX+modalWidth-1, bottomY, '╯', nil, borderStyle)
+
+	// Posicionar cursor en el cuadro de texto
+	e.PromptCursor = startX + 4 + len([]rune(e.PromptText))
+	e.Screen.ShowCursor(e.PromptCursor, startY+2)
+}
+
 func (e *Editor) drawString(x, y int, str string, st tcell.Style) {
 	for i, ch := range str {
 		e.Screen.SetContent(x+i, y, ch, nil, st)
@@ -1063,6 +1150,31 @@ func (e *Editor) handleSidebarKey(ev *tcell.EventKey) {
 		}
 	case tcell.KeyTab, tcell.KeyEscape:
 		e.SidebarFocus = false
+	case tcell.KeyRune:
+		if ev.Rune() == 'a' || ev.Rune() == 'n' {
+			node := e.FileTree.GetSelected()
+			dirPath := e.FileTree.RootPath
+			if node != nil {
+				if node.IsDir {
+					dirPath = node.Path
+				} else {
+					dirPath = filepath.Dir(node.Path)
+				}
+			}
+			relDir, err := filepath.Rel(e.FileTree.RootPath, dirPath)
+			if err != nil || relDir == "." {
+				relDir = ""
+			} else {
+				relDir = relDir + string(filepath.Separator)
+			}
+			newBuf := buffer.NewEmptyBuffer()
+			e.Buffers = append(e.Buffers, newBuf)
+			e.SwitchToBuffer(len(e.Buffers) - 1)
+			e.SidebarFocus = false
+			e.PromptMode = PromptSaveAs
+			e.PromptText = relDir
+			return
+		}
 	}
 }
 
@@ -1155,10 +1267,28 @@ func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 }
 
 func (e *Editor) handlePromptKey(ev *tcell.EventKey) {
+	if ev.Key() == tcell.KeyCtrlV || (ev.Modifiers()&tcell.ModCtrl != 0 && (ev.Rune() == 'v' || ev.Rune() == 'V')) {
+		if e.Clipboard != "" {
+			e.PromptText += e.Clipboard
+			if e.PromptMode == PromptPalette {
+				e.updatePaletteFilter()
+			} else if e.PromptMode == PromptFileFinder {
+				e.FilteredFiles = FilterFiles(e.WorkspaceFiles, e.PromptText)
+				e.FileFinderIdx = 0
+				e.FileFinderScroll = 0
+			}
+			return
+		}
+	}
+
 	switch ev.Key() {
 	case tcell.KeyEscape:
+		wasSaveAs := (e.PromptMode == PromptSaveAs)
 		e.PromptMode = PromptNone
 		e.PromptText = ""
+		if wasSaveAs {
+			e.SetStatus("Guardado cancelado", 1*time.Second)
+		}
 
 	case tcell.KeyEnter:
 		e.submitPrompt()
@@ -1243,6 +1373,8 @@ func (e *Editor) submitPrompt() {
 			e.Buffer.FilePath = newPath
 			e.detectCurrentSyntax()
 			e.saveFile()
+		} else {
+			e.SetStatus("Guardado cancelado: nombre de archivo vacío", 2*time.Second)
 		}
 
 	case PromptPalette:
@@ -1257,6 +1389,8 @@ func (e *Editor) submitPrompt() {
 		if len(e.FilteredFiles) > 0 && e.FileFinderIdx < len(e.FilteredFiles) {
 			target := e.FilteredFiles[e.FileFinderIdx]
 			e.OpenFile(target)
+		} else if strings.TrimSpace(e.PromptText) != "" {
+			e.OpenFile(strings.TrimSpace(e.PromptText))
 		}
 	}
 }
@@ -1598,7 +1732,11 @@ func (e *Editor) saveFile() {
 	} else {
 		e.detectCurrentSyntax()
 		e.QuitWarned = false
-		e.SetStatus(fmt.Sprintf("Guardado '%s' (%d líneas)", e.Buffer.FilePath, e.Buffer.LineCount()), 2*time.Second)
+		e.SetStatus(fmt.Sprintf("✓ Guardado '%s' (%d líneas)", filepath.Base(e.Buffer.FilePath), e.Buffer.LineCount()), 2*time.Second)
+		e.WorkspaceFiles = ScanWorkspaceFiles(3000)
+		if e.FileTree != nil {
+			e.FileTree.Refresh()
+		}
 	}
 }
 
@@ -1692,6 +1830,8 @@ func keyToString(ev *tcell.EventKey) string {
 	switch ev.Key() {
 	case tcell.KeyF1:
 		return "F1"
+	case tcell.KeyF2:
+		return "F2"
 	case tcell.KeyCtrlA:
 		return "Ctrl+A"
 	case tcell.KeyCtrlB:

@@ -46,4 +46,14 @@ func TestFileTreeNavigation(t *testing.T) {
 	if newSelected == nil || newSelected.Name != "main.go" {
 		t.Errorf("se esperaba 'main.go', obtenido: %v", newSelected)
 	}
+
+	// Crear nuevo archivo y refrescar
+	_ = os.WriteFile(filepath.Join(subDir, "helper.go"), []byte("package main"), 0644)
+	ft.Refresh()
+
+	// Debería tener 4 filas visibles (src, helper.go, main.go, README.md) manteniendo 'src' expandido
+	if len(ft.VisibleRows) != 4 {
+		t.Fatalf("se esperaban 4 nodos visibles tras Refresh, obtenidos %d", len(ft.VisibleRows))
+	}
 }
+

@@ -9,10 +9,12 @@ Bienvenido a **edi**, un editor de texto para consola (TUI) rápido, portable y 
 ### Gestión de Archivos y Pestañas
 - `Ctrl+O` : **Buscador Rápido de Archivos (Fuzzy Finder)** del proyecto.
 - `Ctrl+B` : **Alternar Explorador de Archivos** en el panel lateral.
-- `Ctrl+S` : **Guardar archivo** (ejecuta formateadores `on_save` automáticamente).
+- `Ctrl+S` / `F2` : **Guardar archivo**. Si es un archivo nuevo sin nombre, abrirá una ventana modal interactiva directamente en la terminal para ingresar el nombre y guardarlo automáticamente. También ejecuta formateadores `on_save`. *(Nota para macOS: usa Control ⌃ + S o F2; si usas Cmd ⌘ + S tu terminal o sistema operativo interceptará la pulsación).*
 - `Ctrl+N` : **Nueva pestaña** en blanco.
 - `Ctrl+W` : **Cerrar pestaña** actual (con confirmación si hay cambios sin guardar).
-- `Ctrl+Tab` : **Alternar pestaña** siguiente.
+- `Ctrl+Tab` / `Alt+Right` : **Pestaña siguiente**.
+- `Alt+Left` : **Pestaña anterior**.
+- `Alt+1` a `Alt+9` : **Ir directamente a la pestaña 1..9**.
 - `Ctrl+Q` : **Salir de edi**.
 
 ### Paleta de Comandos y Búsqueda
@@ -36,6 +38,7 @@ Bienvenido a **edi**, un editor de texto para consola (TUI) rápido, portable y 
 - `↑` / `↓` : Moverse por archivos y carpetas.
 - `Enter` : Expandir/contraer carpeta o abrir archivo en una pestaña.
 - `→` / `←` : Expandir o contraer carpeta.
+- `a` / `n` : Crear un nuevo archivo dentro de la carpeta seleccionada.
 - `Tab` o `Esc` : Devolver el foco al editor de texto.
 
 ---

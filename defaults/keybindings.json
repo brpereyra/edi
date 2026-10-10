@@ -1,5 +1,6 @@
 {
   "Ctrl+S": "buffer:save",
+  "F2": "buffer:save",
   "Ctrl+Q": "app:quit",
   "Ctrl+Z": "buffer:undo",
   "Ctrl+Y": "buffer:redo",

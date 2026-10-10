@@ -227,3 +227,76 @@ func TestEditorOpenHelp(t *testing.T) {
 		t.Errorf("se esperaba resaltado Markdown en la ayuda, obtenido: %v", ed.CurrentSyntax)
 	}
 }
+
+func TestSaveAsPromptAndAutoSave(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("error inicializando pantalla: %v", err)
+	}
+	defer screen.Fini()
+
+	buf := buffer.NewEmptyBuffer()
+	buf.Lines = []string{"package main", "func main() {}"}
+	buf.Modified = true
+
+	cfg := config.DefaultConfig()
+	ed, err := NewEditor(screen, buf, &cfg)
+	if err != nil {
+		t.Fatalf("error creando editor: %v", err)
+	}
+
+	// Al intentar guardar un buffer sin nombre, debe activar el modal PromptSaveAs
+	ed.executeAction("buffer:save")
+	if ed.PromptMode != PromptSaveAs {
+		t.Fatalf("se esperaba PromptMode = PromptSaveAs, obtenido %v", ed.PromptMode)
+	}
+
+	// Ingresar el nombre del archivo y enviar (Enter)
+	tmpDir := t.TempDir()
+	targetPath := filepath.Join(tmpDir, "auto_saved.go")
+	ed.PromptText = targetPath
+	ed.submitPrompt()
+
+	if ed.PromptMode != PromptNone {
+		t.Errorf("se esperaba PromptMode = PromptNone tras submitPrompt, obtenido %v", ed.PromptMode)
+	}
+	if ed.Buffer.FilePath != targetPath {
+		t.Errorf("se esperaba ruta '%s', obtenida '%s'", targetPath, ed.Buffer.FilePath)
+	}
+	if ed.Buffer.Modified {
+		t.Errorf("el buffer debería estar marcado como no modificado tras guardado exitoso")
+	}
+	if ed.CurrentSyntax == nil || ed.CurrentSyntax.Name != "Go" {
+		t.Errorf("se esperaba detección de sintaxis Go, obtenido: %v", ed.CurrentSyntax)
+	}
+}
+
+func TestSidebarCreateNewFileWithKey(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("error inicializando pantalla: %v", err)
+	}
+	defer screen.Fini()
+
+	buf := buffer.NewEmptyBuffer()
+	cfg := config.DefaultConfig()
+	ed, err := NewEditor(screen, buf, &cfg)
+	if err != nil {
+		t.Fatalf("error creando editor: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	ed.OpenFolder(tmpDir)
+
+	// Simular tecla 'a' en el explorador
+	ev := tcell.NewEventKey(tcell.KeyRune, 'a', tcell.ModNone)
+	ed.handleSidebarKey(ev)
+
+	if ed.PromptMode != PromptSaveAs {
+		t.Fatalf("se esperaba que 'a' en sidebar abra PromptSaveAs, obtenido: %v", ed.PromptMode)
+	}
+	if len(ed.Buffers) != 2 {
+		t.Fatalf("se esperaban 2 buffers tras presionar 'a', obtenidos: %d", len(ed.Buffers))
+	}
+}
+

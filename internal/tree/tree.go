@@ -199,3 +199,41 @@ func (ft *FileTree) CollapseCurrent() {
 		ft.RebuildVisibleRows()
 	}
 }
+
+// Refresh recarga los contenidos del árbol preservando los directorios que estaban expandidos.
+func (ft *FileTree) Refresh() {
+	if ft == nil || ft.RootNode == nil {
+		return
+	}
+
+	expandedMap := make(map[string]bool)
+	var collectExpanded func(node *TreeNode)
+	collectExpanded = func(node *TreeNode) {
+		if node.IsDir && node.Expanded {
+			expandedMap[node.Path] = true
+			for _, child := range node.Children {
+				collectExpanded(child)
+			}
+		}
+	}
+	collectExpanded(ft.RootNode)
+
+	var reloadNode func(node *TreeNode)
+	reloadNode = func(node *TreeNode) {
+		if !node.IsDir {
+			return
+		}
+		node.Children = nil
+		ft.loadChildren(node)
+		for _, child := range node.Children {
+			if child.IsDir && expandedMap[child.Path] {
+				child.Expanded = true
+				reloadNode(child)
+			}
+		}
+	}
+
+	reloadNode(ft.RootNode)
+	ft.RebuildVisibleRows()
+}
+
