@@ -501,4 +501,81 @@ func TestFileFinderAndTabSwitching(t *testing.T) {
 	}
 }
 
+func TestDrawStringAccentsRuneAlignment(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("error inicializando pantalla de simulación: %v", err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 24)
+
+	buf := buffer.NewEmptyBuffer()
+	cfg := config.DefaultConfig()
+	ed, err := NewEditor(screen, buf, &cfg)
+	if err != nil {
+		t.Fatalf("error creando editor: %v", err)
+	}
+
+	// Probar dibujar texto con acentos y símbolos UTF-8
+	testStr := "[↵ Guardar automáticamente | Esc Cancelar]"
+	st := tcell.StyleDefault
+	ed.drawString(2, 5, testStr, st)
+
+	runes := []rune(testStr)
+	for col, expectedRune := range runes {
+		r, _, _, _ := screen.GetContent(2+col, 5)
+		if r != expectedRune {
+			t.Errorf("en columna %d se esperaba rune '%c' (%U), obtenido '%c' (%U)", 2+col, expectedRune, expectedRune, r, r)
+		}
+	}
+}
+
+func TestSidebarPositionLeftRight(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("error inicializando pantalla: %v", err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 24)
+
+	tmpDir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("hola"), 0644)
+
+	buf := buffer.NewEmptyBuffer()
+	cfg := config.DefaultConfig()
+	cfg.SidebarPosition = "right"
+
+	ed, err := NewEditor(screen, buf, &cfg)
+	if err != nil {
+		t.Fatalf("error creando editor: %v", err)
+	}
+
+	ed.OpenFolder(tmpDir)
+	if !ed.SidebarOpen {
+		t.Fatalf("se esperaba sidebar abierto")
+	}
+
+	// Renderizar con sidebar a la derecha
+	ed.Draw()
+
+	// Probar toggle de posición via paleta
+	ed.executeAction("view:toggle_sidebar_pos")
+	if ed.Config.SidebarPosition != "left" {
+		t.Errorf("se esperaba posición 'left' tras toggle, obtenida '%s'", ed.Config.SidebarPosition)
+	}
+	ed.Draw()
+
+	ed.executeAction("view:toggle_sidebar_pos")
+	if ed.Config.SidebarPosition != "right" {
+		t.Errorf("se esperaba posición 'right' tras toggle, obtenida '%s'", ed.Config.SidebarPosition)
+	}
+	ed.Draw()
+
+	// Probar clic del mouse en sidebar a la derecha (x >= 80 - 24 = 56)
+	ed.handleMouseClick(70, 2)
+	if !ed.SidebarFocus {
+		t.Errorf("se esperaba que el clic en x=70 enfocara el sidebar a la derecha")
+	}
+}
+
 

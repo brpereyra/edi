@@ -156,6 +156,7 @@ func buildDefaultPalette() []PaletteItem {
 	return []PaletteItem{
 		{Title: "Documentación y Ayuda", Action: "help:docs", Description: "F1"},
 		{Title: "Alternar explorador de archivos", Action: "view:toggle_tree", Description: "Ctrl+B"},
+		{Title: "Alternar posición del explorador (Izquierda/Derecha)", Action: "view:toggle_sidebar_pos", Description: "Configurar posición"},
 		{Title: "Enfocar explorador / editor", Action: "tree:focus", Description: "Ctrl+E"},
 		{Title: "Buscar archivo por nombre en workspace...", Action: "file:find", Description: "Ctrl+O (Fuzzy Finder)"},
 		{Title: "Nueva pestaña", Action: "buffer:new", Description: "Ctrl+N"},
@@ -399,14 +400,39 @@ func (e *Editor) Draw() {
 		return
 	}
 
-	sidebarOffset := 0
+	sidebarOnRight := strings.ToLower(e.Config.SidebarPosition) == "right"
+	sidebarStartX := -1
+	sidebarWidth := e.SidebarWidth
+
+	var editorStartX int
+	var editorWidth int
+	var tabBarStartX int
+	var tabBarEndX int
+
 	if e.SidebarOpen {
-		sidebarOffset = e.SidebarWidth + 1
-		e.drawSidebar(e.SidebarWidth, height)
+		if sidebarOnRight {
+			sidebarStartX = width - sidebarWidth
+			editorStartX = 0
+			editorWidth = width - (sidebarWidth + 1)
+			tabBarStartX = 0
+			tabBarEndX = width - (sidebarWidth + 1)
+		} else {
+			sidebarStartX = 0
+			editorStartX = sidebarWidth + 1
+			editorWidth = width - editorStartX
+			tabBarStartX = editorStartX
+			tabBarEndX = width
+		}
+		e.drawSidebar(sidebarStartX, sidebarWidth, height)
+	} else {
+		editorStartX = 0
+		editorWidth = width
+		tabBarStartX = 0
+		tabBarEndX = width
 	}
 
 	// 1. Renderizar Barra Superior de Pestañas (Línea 0)
-	e.drawTabBar(sidebarOffset, width)
+	e.drawTabBar(tabBarStartX, tabBarEndX)
 
 	topOffset := 1
 	editorHeight := height - 3 // Línea 0 pestañas, height-2 status, height-1 prompt
@@ -425,8 +451,10 @@ func (e *Editor) Draw() {
 		gutterWidth = len(strconv.Itoa(totalLines)) + 2
 	}
 
-	editorStartX := sidebarOffset + gutterWidth
-	contentWidth := width - editorStartX
+	contentStartX := editorStartX + gutterWidth
+	contentWidth := editorWidth - gutterWidth
+	contentEndX := editorStartX + editorWidth
+
 	if contentWidth > 0 {
 		if e.Buffer.CursorCol < e.Buffer.ScrollCol {
 			e.Buffer.ScrollCol = e.Buffer.CursorCol
@@ -447,14 +475,14 @@ func (e *Editor) Draw() {
 			lineBgStyle = e.Theme.CursorLineStyle
 		}
 
-		// Rellenar fondo de la línea desde sidebarOffset hasta el final
-		for x := sidebarOffset; x < width; x++ {
+		// Rellenar fondo de la línea en el área del editor
+		for x := editorStartX; x < contentEndX; x++ {
 			e.Screen.SetContent(x, screenY, ' ', nil, lineBgStyle)
 		}
 
 		if lineIdx >= e.Buffer.LineCount() {
-			if !e.Config.LineNumbers && sidebarOffset < width {
-				e.Screen.SetContent(sidebarOffset, screenY, '~', nil, e.Theme.LineNumberStyle)
+			if !e.Config.LineNumbers && editorStartX < contentEndX {
+				e.Screen.SetContent(editorStartX, screenY, '~', nil, e.Theme.LineNumberStyle)
 			}
 			continue
 		}
@@ -467,8 +495,8 @@ func (e *Editor) Draw() {
 				numStyle = e.Theme.LineNumberActive
 			}
 			for i, ch := range numStr {
-				if sidebarOffset+i < width {
-					e.Screen.SetContent(sidebarOffset+i, screenY, ch, nil, numStyle)
+				if editorStartX+i < contentEndX {
+					e.Screen.SetContent(editorStartX+i, screenY, ch, nil, numStyle)
 				}
 			}
 		}
@@ -516,8 +544,8 @@ func (e *Editor) Draw() {
 		}
 
 		// Dibujar en pantalla respetando scroll horizontal
-		screenX := editorStartX
-		for colIdx := e.Buffer.ScrollCol; colIdx < len(renderedRunes) && screenX < width; colIdx++ {
+		screenX := contentStartX
+		for colIdx := e.Buffer.ScrollCol; colIdx < len(renderedRunes) && screenX < contentEndX; colIdx++ {
 			r := renderedRunes[colIdx]
 			st := runeStyles[colIdx]
 			e.Screen.SetContent(screenX, screenY, r, nil, st)
@@ -543,14 +571,18 @@ func (e *Editor) Draw() {
 	} else if e.SidebarOpen && e.SidebarFocus {
 		selY := 1 + (e.FileTree.SelectedIdx - e.FileTree.ScrollY)
 		if selY >= 1 && selY < height-2 {
-			e.Screen.ShowCursor(1, selY)
+			cursorCol := 1
+			if sidebarStartX > 0 {
+				cursorCol = sidebarStartX + 1
+			}
+			e.Screen.ShowCursor(cursorCol, selY)
 		} else {
 			e.Screen.HideCursor()
 		}
 	} else {
-		cursorX := editorStartX + (e.Buffer.CursorCol - e.Buffer.ScrollCol)
+		cursorX := contentStartX + (e.Buffer.CursorCol - e.Buffer.ScrollCol)
 		cursorY := topOffset + (e.Buffer.CursorRow - e.Buffer.ScrollRow)
-		if cursorX >= editorStartX && cursorX < width && cursorY >= topOffset && cursorY < topOffset+editorHeight {
+		if cursorX >= contentStartX && cursorX < contentEndX && cursorY >= topOffset && cursorY < topOffset+editorHeight {
 			e.Screen.ShowCursor(cursorX, cursorY)
 		} else {
 			e.Screen.HideCursor()
@@ -560,7 +592,7 @@ func (e *Editor) Draw() {
 	e.Screen.Show()
 }
 
-func (e *Editor) drawSidebar(treeWidth, height int) {
+func (e *Editor) drawSidebar(sidebarStartX, treeWidth, height int) {
 	bgStyle := e.Theme.StatusBarStyle
 	lineFg, _, _ := e.Theme.LineNumberStyle.Decompose()
 	sepStyle := e.Theme.StatusBarStyle.Foreground(lineFg)
@@ -571,13 +603,17 @@ func (e *Editor) drawSidebar(treeWidth, height int) {
 		titleStyle = e.Theme.SelectionStyle.Bold(true)
 	}
 	for x := 0; x < treeWidth; x++ {
-		e.Screen.SetContent(x, 0, ' ', nil, titleStyle)
+		e.Screen.SetContent(sidebarStartX+x, 0, ' ', nil, titleStyle)
 	}
-	e.drawString(1, 0, "EXPLORADOR", titleStyle)
+	e.drawString(sidebarStartX+1, 0, "EXPLORADOR", titleStyle)
 
-	// Separador vertical en x = treeWidth
+	// Separador vertical
+	sepX := treeWidth
+	if sidebarStartX > 0 {
+		sepX = sidebarStartX - 1
+	}
 	for y := 0; y < height-1; y++ {
-		e.Screen.SetContent(treeWidth, y, '│', nil, sepStyle)
+		e.Screen.SetContent(sepX, y, '│', nil, sepStyle)
 	}
 
 	maxVisible := height - 3
@@ -596,7 +632,7 @@ func (e *Editor) drawSidebar(treeWidth, height int) {
 		rowIdx := e.FileTree.ScrollY + i
 
 		for x := 0; x < treeWidth; x++ {
-			e.Screen.SetContent(x, rowY, ' ', nil, bgStyle)
+			e.Screen.SetContent(sidebarStartX+x, rowY, ' ', nil, bgStyle)
 		}
 
 		if rowIdx >= len(visibleRows) {
@@ -616,7 +652,7 @@ func (e *Editor) drawSidebar(treeWidth, height int) {
 		}
 
 		for x := 0; x < treeWidth; x++ {
-			e.Screen.SetContent(x, rowY, ' ', nil, itemStyle)
+			e.Screen.SetContent(sidebarStartX+x, rowY, ' ', nil, itemStyle)
 		}
 
 		indent := strings.Repeat("  ", node.Depth)
@@ -689,18 +725,18 @@ func (e *Editor) drawSidebar(treeWidth, height int) {
 			label = string([]rune(label)[:maxLabelWidth-1]) + "…"
 		}
 
-		e.drawString(0, rowY, label, textStyle)
+		e.drawString(sidebarStartX, rowY, label, textStyle)
 
 		if gitBadge != "" && treeWidth >= 6 {
-			badgeX := treeWidth - 2
+			badgeX := sidebarStartX + treeWidth - 2
 			e.drawString(badgeX, rowY, gitBadge, gitBadgeStyle)
 		}
 	}
 }
 
-func (e *Editor) drawTabBar(startX, width int) {
+func (e *Editor) drawTabBar(startX, endX int) {
 	tabBarStyle := e.Theme.StatusBarStyle
-	for x := startX; x < width; x++ {
+	for x := startX; x < endX; x++ {
 		e.Screen.SetContent(x, 0, ' ', nil, tabBarStyle)
 	}
 
@@ -726,13 +762,13 @@ func (e *Editor) drawTabBar(startX, width int) {
 		}
 
 		for _, ch := range title {
-			if currX < width {
+			if currX < endX {
 				e.Screen.SetContent(currX, 0, ch, nil, tabStyle)
 				currX++
 			}
 		}
 
-		if currX < width {
+		if currX < endX {
 			e.Screen.SetContent(currX, 0, '│', nil, tabBarStyle)
 			currX++
 		}
@@ -780,15 +816,18 @@ func (e *Editor) drawStatusBar(width, y int) {
 	left := fmt.Sprintf(" edi | %s%s%s%s (tab %d/%d)", fileName, modTag, gitInfo, treeStatus, e.ActiveBufferIdx+1, len(e.Buffers))
 	right := fmt.Sprintf("Ln %d, Col %d | %s | %s ", e.Buffer.CursorRow+1, e.Buffer.CursorCol+1, langName, e.Theme.Name)
 
-	for i, ch := range left {
-		if i < width {
-			e.Screen.SetContent(i, y, ch, nil, st)
+	col := 0
+	for _, ch := range left {
+		if col < width {
+			e.Screen.SetContent(col, y, ch, nil, st)
+			col++
 		}
 	}
 
-	startX := width - len(right)
-	if startX > len(left) {
-		for i, ch := range right {
+	rightRunes := []rune(right)
+	startX := width - len(rightRunes)
+	if startX > len([]rune(left)) {
+		for i, ch := range rightRunes {
 			e.Screen.SetContent(startX+i, y, ch, nil, st)
 		}
 	}
@@ -805,12 +844,12 @@ func (e *Editor) drawBottomBar(width, y int) {
 	case PromptFind:
 		prompt := fmt.Sprintf("Buscar: %s", e.PromptText)
 		e.drawString(0, y, prompt, e.Theme.DefaultStyle)
-		e.PromptCursor = len("Buscar: ") + len([]rune(e.PromptText))
+		e.PromptCursor = len([]rune("Buscar: ")) + len([]rune(e.PromptText))
 
 	case PromptGoto:
 		prompt := fmt.Sprintf("Ir a línea: %s", e.PromptText)
 		e.drawString(0, y, prompt, e.Theme.DefaultStyle)
-		e.PromptCursor = len("Ir a línea: ") + len([]rune(e.PromptText))
+		e.PromptCursor = len([]rune("Ir a línea: ")) + len([]rune(e.PromptText))
 
 	case PromptPalette, PromptFileFinder, PromptSaveAs:
 		e.drawString(1, y, "Modal activo (Presiona Esc para cancelar)", e.Theme.LineNumberStyle)
@@ -1184,8 +1223,10 @@ func (e *Editor) drawSaveAsModal(width, height int) {
 }
 
 func (e *Editor) drawString(x, y int, str string, st tcell.Style) {
-	for i, ch := range str {
-		e.Screen.SetContent(x+i, y, ch, nil, st)
+	col := 0
+	for _, ch := range str {
+		e.Screen.SetContent(x+col, y, ch, nil, st)
+		col++
 	}
 }
 
@@ -1220,18 +1261,36 @@ func (e *Editor) handleMouseClick(mx, my int) {
 		return
 	}
 
+	width, height := e.Screen.Size()
+	sidebarOnRight := strings.ToLower(e.Config.SidebarPosition) == "right"
+	sidebarStartX := 0
+	if sidebarOnRight {
+		sidebarStartX = width - e.SidebarWidth
+	}
+
 	// 1. Clic en barra de pestañas (fila 0)
 	if my == 0 {
-		sidebarOffset := 0
 		if e.SidebarOpen {
-			sidebarOffset = e.SidebarWidth + 1
-			if mx < e.SidebarWidth {
+			if sidebarOnRight && mx >= sidebarStartX {
+				e.SidebarFocus = true
+				return
+			} else if !sidebarOnRight && mx < e.SidebarWidth {
 				e.SidebarFocus = true
 				return
 			}
 		}
 
-		currX := sidebarOffset
+		tabBarStartX := 0
+		tabBarEndX := width
+		if e.SidebarOpen {
+			if sidebarOnRight {
+				tabBarEndX = width - (e.SidebarWidth + 1)
+			} else {
+				tabBarStartX = e.SidebarWidth + 1
+			}
+		}
+
+		currX := tabBarStartX
 		for i, b := range e.Buffers {
 			name := b.FilePath
 			if name == "" {
@@ -1246,7 +1305,7 @@ func (e *Editor) handleMouseClick(mx, my int) {
 			tabTitle := fmt.Sprintf(" %d:%s%s ", i+1, name, mod)
 			tabLen := len([]rune(tabTitle))
 
-			if mx >= currX && mx < currX+tabLen {
+			if mx >= currX && mx < currX+tabLen && currX+tabLen <= tabBarEndX {
 				e.SwitchToBuffer(i)
 				return
 			}
@@ -1256,42 +1315,57 @@ func (e *Editor) handleMouseClick(mx, my int) {
 	}
 
 	// 2. Clic en el panel lateral del explorador
-	if e.SidebarOpen && mx < e.SidebarWidth {
-		e.SidebarFocus = true
-		rowIdx := e.FileTree.ScrollY + (my - 1)
-		if rowIdx >= 0 && rowIdx < len(e.FileTree.VisibleRows) {
-			e.FileTree.SelectedIdx = rowIdx
-			node := e.FileTree.VisibleRows[rowIdx]
-			if node.IsDir {
-				e.FileTree.ToggleCurrent()
-			} else {
-				e.OpenFile(node.Path)
-				e.SidebarFocus = false
-			}
+	if e.SidebarOpen {
+		inSidebar := false
+		if sidebarOnRight && mx >= sidebarStartX {
+			inSidebar = true
+		} else if !sidebarOnRight && mx < e.SidebarWidth {
+			inSidebar = true
 		}
-		return
+
+		if inSidebar {
+			e.SidebarFocus = true
+			rowIdx := e.FileTree.ScrollY + (my - 1)
+			if rowIdx >= 0 && rowIdx < len(e.FileTree.VisibleRows) {
+				e.FileTree.SelectedIdx = rowIdx
+				node := e.FileTree.VisibleRows[rowIdx]
+				if node.IsDir {
+					e.FileTree.ToggleCurrent()
+				} else {
+					e.OpenFile(node.Path)
+					e.SidebarFocus = false
+				}
+			}
+			return
+		}
 	}
 
 	// 3. Clic en el área de edición del texto
-	_, height := e.Screen.Size()
 	if my >= 1 && my < height-2 {
 		e.SidebarFocus = false
-		sidebarOffset := 0
-		if e.SidebarOpen {
-			sidebarOffset = e.SidebarWidth + 1
+		editorStartX := 0
+		if e.SidebarOpen && !sidebarOnRight {
+			editorStartX = e.SidebarWidth + 1
 		}
 		gutterWidth := 0
 		if e.Config.LineNumbers {
 			gutterWidth = len(strconv.Itoa(e.Buffer.LineCount())) + 2
 		}
-		editorStartX := sidebarOffset + gutterWidth
+		contentStartX := editorStartX + gutterWidth
 
 		targetRow := e.Buffer.ScrollRow + (my - 1)
-		targetCol := e.Buffer.ScrollCol + (mx - editorStartX)
+		targetCol := e.Buffer.ScrollCol + (mx - contentStartX)
 
 		if targetRow >= 0 && targetRow < e.Buffer.LineCount() {
 			e.Buffer.CursorRow = targetRow
-			e.Buffer.CursorCol = targetCol
+			lineLen := len([]rune(e.Buffer.Lines[targetRow]))
+			if targetCol < 0 {
+				e.Buffer.CursorCol = 0
+			} else if targetCol > lineLen {
+				e.Buffer.CursorCol = lineLen
+			} else {
+				e.Buffer.CursorCol = targetCol
+			}
 			e.Buffer.ClampCursor()
 			e.Selecting = false
 		}
@@ -1600,6 +1674,15 @@ func (e *Editor) executeAction(action string) {
 			// Ya está enfocado, cerrarlo
 			e.SidebarOpen = false
 			e.SidebarFocus = false
+		}
+
+	case "view:toggle_sidebar_pos":
+		if strings.ToLower(e.Config.SidebarPosition) == "right" {
+			e.Config.SidebarPosition = "left"
+			e.SetStatus("Posición del explorador: Izquierda", 2*time.Second)
+		} else {
+			e.Config.SidebarPosition = "right"
+			e.SetStatus("Posición del explorador: Derecha", 2*time.Second)
 		}
 
 	case "tree:focus":

@@ -21,6 +21,7 @@ type EditorConfig struct {
 	StatusBar            bool   `json:"status_bar"`
 	AutoIndent           bool   `json:"auto_indent"`
 	GitIntegration       bool   `json:"git_integration"`
+	SidebarPosition      string `json:"sidebar_position"` // "left" o "right"
 }
 
 // DefaultConfig retorna la configuración predeterminada en memoria.
@@ -34,6 +35,7 @@ func DefaultConfig() EditorConfig {
 		StatusBar:            true,
 		AutoIndent:           true,
 		GitIntegration:       true,
+		SidebarPosition:      "left",
 	}
 }
 

@@ -86,7 +86,9 @@ Esto creará la siguiente estructura en `~/.edi-config/`:
   "line_numbers": true,
   "highlight_current_line": true,
   "status_bar": true,
-  "auto_indent": true
+  "auto_indent": true,
+  "git_integration": true,
+  "sidebar_position": "left" // "left" o "right"
 }
 ```
 

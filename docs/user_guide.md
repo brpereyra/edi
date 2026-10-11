@@ -162,7 +162,8 @@ Ejecuta `edi --init` para crear la carpeta de configuración con temas y sintaxi
   "highlight_current_line": true,
   "status_bar": true,
   "auto_indent": true,
-  "git_integration": true
+  "git_integration": true,
+  "sidebar_position": "left" // "left" o "right"
 }
 ```
 
