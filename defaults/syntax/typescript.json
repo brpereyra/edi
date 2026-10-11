@@ -1,0 +1,30 @@
+{
+  "name": "TypeScript",
+  "extensions": [".ts", ".tsx", ".mts", ".cts"],
+  "rules": [
+    {
+      "scope": "comment",
+      "pattern": "//.*$|/\\*.*?\\*/"
+    },
+    {
+      "scope": "string",
+      "pattern": "\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'|`(?:\\\\.|[^`\\\\])*`"
+    },
+    {
+      "scope": "keyword",
+      "pattern": "\\b(const|let|var|function|return|if|else|for|while|do|switch|case|default|break|continue|class|extends|implements|interface|type|enum|namespace|module|new|this|super|import|export|from|as|try|catch|finally|throw|typeof|instanceof|void|delete|in|of|yield|async|await|declare|abstract|public|private|protected|readonly|override|keyof|as)\\b"
+    },
+    {
+      "scope": "type",
+      "pattern": "\\b(string|number|boolean|any|unknown|never|void|null|undefined|symbol|bigint|Record|Partial|Required|Readonly|Pick|Omit|Promise|Array|Object|true|false)\\b"
+    },
+    {
+      "scope": "number",
+      "pattern": "\\b(0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+|\\d+(\\.\\d+)?([eE][+-]?\\d+)?)\\b"
+    },
+    {
+      "scope": "function",
+      "pattern": "\\b[a-zA-Z_$][a-zA-Z0-9_$]*\\s*\\("
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "name": "TOML",
+  "extensions": [".toml"],
+  "rules": [
+    {
+      "scope": "comment",
+      "pattern": "#.*$"
+    },
+    {
+      "scope": "string",
+      "pattern": "\"\"\"[\\s\\S]*?\"\"\"|'''[\\s\\S]*?'''|\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'"
+    },
+    {
+      "scope": "keyword",
+      "pattern": "^\\[\\[?.*?\\]\\]?"
+    },
+    {
+      "scope": "type",
+      "pattern": "^[a-zA-Z0-9_.-]+(?=\\s*=)"
+    },
+    {
+      "scope": "number",
+      "pattern": "\\b(true|false|\\d+(\\.\\d+)?)\\b"
+    }
+  ]
+}

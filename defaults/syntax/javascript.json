@@ -1,0 +1,30 @@
+{
+  "name": "JavaScript",
+  "extensions": [".js", ".jsx", ".mjs", ".cjs"],
+  "rules": [
+    {
+      "scope": "comment",
+      "pattern": "//.*$|/\\*.*?\\*/"
+    },
+    {
+      "scope": "string",
+      "pattern": "\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'|`(?:\\\\.|[^`\\\\])*`"
+    },
+    {
+      "scope": "keyword",
+      "pattern": "\\b(const|let|var|function|return|if|else|for|while|do|switch|case|default|break|continue|class|extends|new|this|super|import|export|from|as|try|catch|finally|throw|typeof|instanceof|void|delete|in|of|yield|async|await)\\b"
+    },
+    {
+      "scope": "type",
+      "pattern": "\\b(true|false|null|undefined|NaN|Infinity|Promise|Array|Object|String|Number|Boolean|Symbol|Map|Set|RegExp|Date|Error|JSON|Math|console)\\b"
+    },
+    {
+      "scope": "number",
+      "pattern": "\\b(0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+|\\d+(\\.\\d+)?([eE][+-]?\\d+)?)\\b"
+    },
+    {
+      "scope": "function",
+      "pattern": "\\b[a-zA-Z_$][a-zA-Z0-9_$]*\\s*\\("
+    }
+  ]
+}

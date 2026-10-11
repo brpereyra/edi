@@ -1,0 +1,22 @@
+{
+  "name": "Shell Tools",
+  "version": "1.0.0",
+  "languages": ["shell"],
+  "hooks": {
+    "on_save": [
+      {
+        "action": "pipe_buffer",
+        "command": "shfmt -i 2 -ci",
+        "description": "Formatear con shfmt"
+      }
+    ]
+  },
+  "commands": [
+    {
+      "id": "shell:check",
+      "title": "Verificar script con ShellCheck",
+      "action": "run_shell",
+      "command": "shellcheck {file}"
+    }
+  ]
+}

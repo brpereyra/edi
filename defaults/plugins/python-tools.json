@@ -1,0 +1,22 @@
+{
+  "name": "Python Tools",
+  "version": "1.0.0",
+  "languages": ["python"],
+  "hooks": {
+    "on_save": [
+      {
+        "action": "pipe_buffer",
+        "command": "ruff format -",
+        "description": "Formatear con Ruff / Black"
+      }
+    ]
+  },
+  "commands": [
+    {
+      "id": "python:test",
+      "title": "Ejecutar pytest",
+      "action": "run_shell",
+      "command": "pytest"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "name": "Rust Tools",
+  "version": "1.0.0",
+  "languages": ["rust"],
+  "hooks": {
+    "on_save": [
+      {
+        "action": "pipe_buffer",
+        "command": "rustfmt",
+        "description": "Formatear con rustfmt"
+      }
+    ]
+  },
+  "commands": [
+    {
+      "id": "cargo:check",
+      "title": "Ejecutar cargo check",
+      "action": "run_shell",
+      "command": "cargo check"
+    },
+    {
+      "id": "cargo:test",
+      "title": "Ejecutar cargo test",
+      "action": "run_shell",
+      "command": "cargo test"
+    }
+  ]
+}

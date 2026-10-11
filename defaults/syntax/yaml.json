@@ -1,0 +1,26 @@
+{
+  "name": "YAML",
+  "extensions": [".yaml", ".yml"],
+  "rules": [
+    {
+      "scope": "comment",
+      "pattern": "#.*$"
+    },
+    {
+      "scope": "string",
+      "pattern": "\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'"
+    },
+    {
+      "scope": "keyword",
+      "pattern": "\\b(true|false|yes|no|on|off|null|~)\\b"
+    },
+    {
+      "scope": "type",
+      "pattern": "^[\\s-]*[a-zA-Z0-9_.-]+(?=\\s*:)"
+    },
+    {
+      "scope": "number",
+      "pattern": "\\b\\d+(\\.\\d+)?\\b"
+    }
+  ]
+}

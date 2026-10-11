@@ -84,40 +84,51 @@ Para inicializar automáticamente esta estructura en tu máquina:
 
 ---
 
-## Cómo Agregar un Nuevo Lenguaje (`syntax/`)
+## Lenguajes Soportados y Extensiones
 
-Para agregar resaltado a un lenguaje nuevo (por ejemplo, Rust), simplemente crea `~/.edi-config/syntax/rust.json`:
+`edi` incluye de fábrica resaltado de sintaxis optimizado para **más de 18 lenguajes y formatos**:
+- **Sistemas & Backend**: Go, Rust, C, C++, Python, SQL
+- **Web & Frontend**: JavaScript, TypeScript, JSX/TSX, HTML, CSS, SCSS
+- **Configuración & Infraestructura**: Dockerfile, Makefile, YAML, TOML, JSON, Shell/Bash, XML, Markdown, Git Diff
+
+### Plugins y Formateadores Automáticos
+- **Go**: `gofmt` al guardar, comando `go vet`
+- **Rust**: `rustfmt` al guardar, comando `cargo check` y `cargo test`
+- **Web**: `prettier` al guardar en JS, TS, HTML, CSS, JSON, YAML y Markdown
+- **Python**: `ruff format` o `black` al guardar, comando `pytest`
+- **Shell**: `shfmt` al guardar, `shellcheck`
+
+### Gestor de Extensiones en Terminal (`edi ext`)
+```bash
+# Ver todas las extensiones y lenguajes activos
+edi ext
+
+# Instalar una sintaxis o plugin desde una URL o archivo local
+edi ext install https://raw.githubusercontent.com/.../mi_lenguaje.json
+edi ext install ./mi_lenguaje.json
+```
+
+---
+
+## Cómo Crear un Nuevo Lenguaje Personalizado (`syntax/`)
+
+Para agregar resaltado a un lenguaje propietario o no incluido, crea `~/.edi-config/syntax/mi_lenguaje.json`:
 
 ```json
 {
-  "name": "Rust",
-  "extensions": [".rs"],
+  "name": "MiLenguaje",
+  "extensions": [".ext"],
   "rules": [
-    {
-      "scope": "comment",
-      "pattern": "//.*$"
-    },
-    {
-      "scope": "string",
-      "pattern": "\"(?:\\\\.|[^\"\\\\])*\""
-    },
-    {
-      "scope": "keyword",
-      "pattern": "\\b(fn|let|mut|pub|struct|enum|impl|trait|use|mod|match|if|else|loop|while|for|in|return)\\b"
-    },
-    {
-      "scope": "type",
-      "pattern": "\\b(i32|i64|u32|u64|usize|bool|char|str|String|Option|Result|Vec)\\b"
-    },
-    {
-      "scope": "number",
-      "pattern": "\\b\\d+(\\.\\d+)?\\b"
-    }
+    { "scope": "comment", "pattern": "//.*$" },
+    { "scope": "string", "pattern": "\"(?:\\\\.|[^\"\\\\])*\"" },
+    { "scope": "keyword", "pattern": "\\b(fn|let|return|if|else)\\b" },
+    { "scope": "type", "pattern": "\\b(Int|String|Bool)\\b" },
+    { "scope": "number", "pattern": "\\b\\d+\\b" }
   ]
 }
 ```
 
-¡Al abrir cualquier archivo `.rs`, `edi` lo resaltará de inmediato sin necesidad de recompilar!
+¡Al abrir cualquier archivo `.ext`, `edi` lo resaltará de inmediato sin necesidad de recompilar!
 
 ---
 

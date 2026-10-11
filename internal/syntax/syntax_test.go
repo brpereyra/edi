@@ -10,14 +10,40 @@ func TestDetectSyntax(t *testing.T) {
 		t.Fatalf("se esperaban sintaxis cargadas, se obtuvieron 0")
 	}
 
-	goSyn := DetectSyntax("main.go", syntaxes)
-	if goSyn == nil || goSyn.Name != "Go" {
-		t.Fatalf("se esperaba sintaxis Go para main.go")
+	testCases := []struct {
+		file     string
+		expected string
+	}{
+		{"main.go", "Go"},
+		{"script.py", "Python"},
+		{"main.rs", "Rust"},
+		{"app.js", "JavaScript"},
+		{"index.ts", "TypeScript"},
+		{"component.tsx", "TypeScript"},
+		{"main.c", "C"},
+		{"engine.cpp", "C++"},
+		{"setup.sh", "Shell"},
+		{".bashrc", "Shell"},
+		{"index.html", "HTML"},
+		{"style.css", "CSS"},
+		{"config.yaml", "YAML"},
+		{"deploy.yml", "YAML"},
+		{"Cargo.toml", "TOML"},
+		{"schema.sql", "SQL"},
+		{"Dockerfile", "Dockerfile"},
+		{"Makefile", "Makefile"},
+		{"data.xml", "XML"},
+		{"patch.diff", "Diff"},
+		{"package.json", "JSON"},
 	}
 
-	pySyn := DetectSyntax("script.py", syntaxes)
-	if pySyn == nil || pySyn.Name != "Python" {
-		t.Fatalf("se esperaba sintaxis Python para script.py")
+	for _, tc := range testCases {
+		syn := DetectSyntax(tc.file, syntaxes)
+		if syn == nil {
+			t.Errorf("no se detectó sintaxis para %s (se esperaba %s)", tc.file, tc.expected)
+		} else if syn.Name != tc.expected {
+			t.Errorf("para %s se detectó %s, se esperaba %s", tc.file, syn.Name, tc.expected)
+		}
 	}
 }
 

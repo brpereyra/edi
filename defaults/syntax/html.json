@@ -1,0 +1,26 @@
+{
+  "name": "HTML",
+  "extensions": [".html", ".htm", ".xhtml"],
+  "rules": [
+    {
+      "scope": "comment",
+      "pattern": "<!--[\\s\\S]*?-->"
+    },
+    {
+      "scope": "string",
+      "pattern": "\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'"
+    },
+    {
+      "scope": "keyword",
+      "pattern": "</?[a-zA-Z0-9:-]+(\\s|>|/>)"
+    },
+    {
+      "scope": "type",
+      "pattern": "\\b[a-zA-Z0-9:-]+(?=\\s*=)"
+    },
+    {
+      "scope": "function",
+      "pattern": "&[a-zA-Z0-9#]+;"
+    }
+  ]
+}

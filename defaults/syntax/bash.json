@@ -1,0 +1,30 @@
+{
+  "name": "Shell",
+  "extensions": [".sh", ".bash", ".zsh", ".bashrc", ".zshrc", ".profile", "bashrc", "zshrc"],
+  "rules": [
+    {
+      "scope": "comment",
+      "pattern": "#.*$"
+    },
+    {
+      "scope": "string",
+      "pattern": "\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'"
+    },
+    {
+      "scope": "keyword",
+      "pattern": "\\b(if|then|elif|else|fi|for|in|while|until|do|done|case|esac|function|select|time|return|exit|break|continue)\\b"
+    },
+    {
+      "scope": "variable",
+      "pattern": "\\$\\{?[a-zA-Z_0-9#?!*@-]+\\}?"
+    },
+    {
+      "scope": "function",
+      "pattern": "\\b(echo|printf|cd|pwd|export|unset|source|local|alias|set|read|test|shift|eval|exec|which|grep|sed|awk|find|cat|mkdir|rm|cp|mv|chmod|chown|curl|wget)\\b"
+    },
+    {
+      "scope": "number",
+      "pattern": "\\b\\d+\\b"
+    }
+  ]
+}

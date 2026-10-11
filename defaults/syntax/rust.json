@@ -1,0 +1,30 @@
+{
+  "name": "Rust",
+  "extensions": [".rs"],
+  "rules": [
+    {
+      "scope": "comment",
+      "pattern": "//.*$|/\\*.*?\\*/"
+    },
+    {
+      "scope": "string",
+      "pattern": "\"(?:\\\\.|[^\"\\\\])*\"|r#\"[\\s\\S]*?\"#"
+    },
+    {
+      "scope": "keyword",
+      "pattern": "\\b(fn|let|mut|pub|struct|enum|impl|trait|use|mod|match|if|else|loop|while|for|in|return|as|break|continue|const|static|type|where|unsafe|async|await|dyn|move|ref|self|Self|super|crate)\\b"
+    },
+    {
+      "scope": "type",
+      "pattern": "\\b(i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize|f32|f64|bool|char|str|String|Option|Some|None|Result|Ok|Err|Vec|Box|Rc|Arc)\\b"
+    },
+    {
+      "scope": "number",
+      "pattern": "\\b(0x[0-9a-fA-F_]+|0b[01_]+|0o[0-7_]+|\\d+[\\d_]*(\\.[\\d_]+)?([eE][+-]?[\\d_]+)?(i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize|f32|f64)?)\\b"
+    },
+    {
+      "scope": "function",
+      "pattern": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\s*\\("
+    }
+  ]
+}

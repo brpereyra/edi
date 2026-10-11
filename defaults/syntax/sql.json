@@ -1,0 +1,30 @@
+{
+  "name": "SQL",
+  "extensions": [".sql"],
+  "rules": [
+    {
+      "scope": "comment",
+      "pattern": "--.*$|/\\*.*?\\*/"
+    },
+    {
+      "scope": "string",
+      "pattern": "'(?:''|[^'])*'"
+    },
+    {
+      "scope": "keyword",
+      "pattern": "(?i)\\b(SELECT|FROM|WHERE|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|DROP|ALTER|TABLE|INDEX|VIEW|JOIN|INNER|LEFT|RIGHT|FULL|OUTER|ON|GROUP|BY|ORDER|HAVING|LIMIT|OFFSET|UNION|ALL|DISTINCT|AS|AND|OR|NOT|IN|IS|NULL|LIKE|BETWEEN|EXISTS|CASE|WHEN|THEN|ELSE|END|PRIMARY|KEY|FOREIGN|REFERENCES|DEFAULT|CHECK|UNIQUE|CONSTRAINT|DATABASE|SCHEMA|TRANSACTION|COMMIT|ROLLBACK)\\b"
+    },
+    {
+      "scope": "type",
+      "pattern": "(?i)\\b(INT|INTEGER|BIGINT|SMALLINT|TINYINT|FLOAT|DOUBLE|DECIMAL|NUMERIC|VARCHAR|CHAR|TEXT|BOOLEAN|DATE|TIME|TIMESTAMP|BLOB|JSON|UUID|SERIAL)\\b"
+    },
+    {
+      "scope": "number",
+      "pattern": "\\b\\d+(\\.\\d+)?\\b"
+    },
+    {
+      "scope": "function",
+      "pattern": "(?i)\\b(COUNT|SUM|AVG|MIN|MAX|COALESCE|NOW|CONCAT|LOWER|UPPER|SUBSTRING|TRIM)\\s*\\("
+    }
+  ]
+}

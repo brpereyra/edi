@@ -1,0 +1,30 @@
+{
+  "name": "CSS",
+  "extensions": [".css", ".scss", ".sass", ".less"],
+  "rules": [
+    {
+      "scope": "comment",
+      "pattern": "/\\*.*?\\*/|//.*$"
+    },
+    {
+      "scope": "string",
+      "pattern": "\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'"
+    },
+    {
+      "scope": "keyword",
+      "pattern": "@[a-zA-Z-]+|!important"
+    },
+    {
+      "scope": "type",
+      "pattern": "\\b[a-zA-Z-]+(?=\\s*:)"
+    },
+    {
+      "scope": "number",
+      "pattern": "#[0-9a-fA-F]{3,8}|\\b\\d+(\\.\\d+)?(px|rem|em|vh|vw|%|s|ms|deg|fr)?\\b"
+    },
+    {
+      "scope": "function",
+      "pattern": "\\b(rgb|rgba|hsl|hsla|calc|var|url|linear-gradient|radial-gradient)\\s*\\("
+    }
+  ]
+}

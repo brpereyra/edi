@@ -153,6 +153,25 @@ Puedes conectar formateadores automáticos (`gofmt`, `prettier`, `black`, etc.):
 
 ---
 
+### 2.5 Lenguajes y Extensiones de Serie (Built-in)
+`edi` incluye de fábrica resaltado de sintaxis optimizado para los lenguajes más populares:
+- **Sistemas y Backend**: Go, Rust, C, C++, Python, SQL
+- **Web y Frontend**: JavaScript, TypeScript, HTML, CSS
+- **Configuración y DevOps**: Dockerfile, Makefile, YAML, TOML, JSON, Shell/Bash, XML, Diff, Markdown
+
+### 2.6 Gestor de Extensiones (`edi ext`)
+Puedes inspeccionar o instalar extensiones y plugins desde la terminal:
+```bash
+# Listar todas las extensiones activas
+edi ext
+
+# Instalar una sintaxis o plugin desde una URL o archivo local
+edi ext install https://url/a/mi-sintaxis.json
+edi ext install ./mi_plugin.json
+```
+
+---
+
 ## 3. Uso en Línea de Comandos
 
 ```bash
@@ -162,6 +181,10 @@ edi main.go
 # Abrir una carpeta completa en el explorador
 edi .
 edi /ruta/a/mi-proyecto
+
+# Gestión de extensiones y plugins
+edi ext
+edi ext install <url-o-archivo.json>
 
 # Ayuda, versión y actualización
 edi version

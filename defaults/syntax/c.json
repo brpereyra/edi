@@ -1,0 +1,34 @@
+{
+  "name": "C",
+  "extensions": [".c", ".h"],
+  "rules": [
+    {
+      "scope": "comment",
+      "pattern": "//.*$|/\\*.*?\\*/"
+    },
+    {
+      "scope": "string",
+      "pattern": "\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'"
+    },
+    {
+      "scope": "keyword",
+      "pattern": "\\b(if|else|for|while|do|switch|case|default|break|continue|return|goto|sizeof|typedef|struct|union|enum|static|extern|auto|register|const|volatile|inline|restrict)\\b"
+    },
+    {
+      "scope": "type",
+      "pattern": "\\b(void|char|short|int|long|float|double|signed|unsigned|_Bool|size_t|ssize_t|int8_t|int16_t|int32_t|int64_t|uint8_t|uint16_t|uint32_t|uint64_t|uintptr_t|FILE|NULL|true|false)\\b"
+    },
+    {
+      "scope": "operator",
+      "pattern": "^\\s*#\\s*(include|define|undef|if|ifdef|ifndef|elif|else|endif|pragma|error)\\b"
+    },
+    {
+      "scope": "number",
+      "pattern": "\\b(0x[0-9a-fA-F]+|\\d+(\\.\\d+)?([eE][+-]?\\d+)?[uUlL]*)\\b"
+    },
+    {
+      "scope": "function",
+      "pattern": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\s*\\("
+    }
+  ]
+}

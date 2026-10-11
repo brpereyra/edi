@@ -199,3 +199,20 @@ Conecta formateadores automáticos al guardar:
   }
 }
 ```
+
+### 5.4 Lenguajes Soportados de Fábrica
+`edi` incluye de serie más de 18 definiciones de sintaxis sin necesidad de instalación:
+- Go, Rust, C, C++, Python, SQL
+- JavaScript, TypeScript, JSX, TSX, HTML, CSS, SCSS
+- Dockerfile, Makefile, YAML, TOML, JSON, Shell/Bash, XML, Markdown, Diff
+
+### 5.5 Gestor de Extensiones (`edi ext`)
+Inspecciona o instala extensiones desde la línea de comandos:
+```bash
+# Listar todas las sintaxis y plugins activos
+edi ext
+
+# Instalar una sintaxis o plugin desde una URL o archivo local
+edi ext install https://raw.githubusercontent.com/.../mi_lenguaje.json
+edi ext install ./mi_plugin.json
+```

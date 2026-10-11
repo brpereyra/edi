@@ -8,6 +8,7 @@ import (
 	"edi/internal/buffer"
 	"edi/internal/config"
 	"edi/internal/editor"
+	"edi/internal/extensions"
 	"edi/internal/updater"
 	"edi/internal/version"
 
@@ -21,11 +22,14 @@ USO:
   edi [opciones] [archivo o carpeta]
   edi update [--force]
   edi version
+  edi ext [list|install <url>]
 
 EJEMPLOS:
   edi main.go           Abre o crea un archivo
   edi .                 Abre la carpeta actual en el Explorador de Archivos lateral
   edi /ruta/a/proyecto  Abre un proyecto específico en el Explorador
+  edi ext               Lista los lenguajes y plugins activos
+  edi ext install <url> Instala una sintaxis o plugin desde una URL o archivo
   edi --init            Inicializa la configuración en ~/.edi-config/
   edi --update          Actualiza edi a la última versión en GitHub (preserva tu config)
   edi --version         Muestra la versión instalada y arquitectura
@@ -87,6 +91,9 @@ func main() {
 				fmt.Fprintf(os.Stderr, "Error durante la actualización: %v\n", err)
 				os.Exit(1)
 			}
+			os.Exit(0)
+		case "ext", "extension", "extensions", "plugin", "plugins":
+			handleExtensionsCommand(os.Args[2:])
 			os.Exit(0)
 		}
 	}
@@ -216,3 +223,44 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+func handleExtensionsCommand(args []string) {
+	if len(args) == 0 || args[0] == "list" {
+		items := extensions.ListAllExtensions()
+		fmt.Printf("Extensiones activas en %s:\n\n", version.FullVersion())
+
+		fmt.Println("Sintaxis de Lenguajes:")
+		for _, it := range items {
+			if it.Type == "sintaxis" {
+				fmt.Printf("  - %-14s %s\n", it.Name, it.Description)
+			}
+		}
+
+		fmt.Println("\nPlugins y Herramientas:")
+		for _, it := range items {
+			if it.Type == "plugin" {
+				fmt.Printf("  - %-20s %s\n", it.Name, it.Description)
+			}
+		}
+		userDir, _ := config.GetUserConfigDir()
+		fmt.Printf("\nUbicación de extensiones del usuario: %s\n", userDir)
+		fmt.Println("Para instalar una sintaxis o plugin: edi ext install <url-o-archivo.json>")
+		return
+	}
+
+	if args[0] == "install" {
+		if len(args) < 2 {
+			fmt.Println("Uso: edi ext install <ruta-archivo-o-url>")
+			os.Exit(1)
+		}
+		source := args[1]
+		if err := extensions.InstallFromSource(source); err != nil {
+			fmt.Fprintf(os.Stderr, "Error instalando extension: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	fmt.Println("Comando desconocido. Uso: edi ext [list|install <url>]")
+}
+

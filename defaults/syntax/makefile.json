@@ -1,0 +1,26 @@
+{
+  "name": "Makefile",
+  "extensions": [".mk", "Makefile", "makefile", "GNUmakefile"],
+  "rules": [
+    {
+      "scope": "comment",
+      "pattern": "#.*$"
+    },
+    {
+      "scope": "string",
+      "pattern": "\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'"
+    },
+    {
+      "scope": "keyword",
+      "pattern": "^([a-zA-Z0-9_.-]+)\\s*:"
+    },
+    {
+      "scope": "type",
+      "pattern": "\\b(include|ifeq|ifneq|ifdef|ifndef|else|endif)\\b"
+    },
+    {
+      "scope": "variable",
+      "pattern": "\\$\\([a-zA-Z0-9_]+\\)|\\$\\{[a-zA-Z0-9_]+\\}|\\$[@<^+*]"
+    }
+  ]
+}

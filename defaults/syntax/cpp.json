@@ -1,0 +1,34 @@
+{
+  "name": "C++",
+  "extensions": [".cpp", ".hpp", ".cc", ".hh", ".cxx", ".hxx", ".c++", ".h++"],
+  "rules": [
+    {
+      "scope": "comment",
+      "pattern": "//.*$|/\\*.*?\\*/"
+    },
+    {
+      "scope": "string",
+      "pattern": "\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'|R\"[a-zA-Z0-9]*\\([\\s\\S]*?\\)[a-zA-Z0-9]*\""
+    },
+    {
+      "scope": "keyword",
+      "pattern": "\\b(class|namespace|template|typename|public|private|protected|virtual|override|final|friend|constexpr|consteval|constinit|new|delete|operator|try|catch|throw|using|decltype|static_assert|noexcept|concept|requires|co_await|co_yield|co_return|if|else|for|while|do|switch|case|default|break|continue|return|goto|sizeof|typedef|struct|union|enum|static|extern|auto|register|const|volatile|inline)\\b"
+    },
+    {
+      "scope": "type",
+      "pattern": "\\b(void|char|wchar_t|char8_t|char16_t|char32_t|short|int|long|float|double|signed|unsigned|bool|size_t|std|string|string_view|vector|map|unordered_map|set|shared_ptr|unique_ptr|make_shared|make_unique|pair|tuple|optional|variant|nullptr|true|false)\\b"
+    },
+    {
+      "scope": "operator",
+      "pattern": "^\\s*#\\s*(include|define|undef|if|ifdef|ifndef|elif|else|endif|pragma)\\b"
+    },
+    {
+      "scope": "number",
+      "pattern": "\\b(0x[0-9a-fA-F]+|0b[01]+|\\d+(\\.\\d+)?([eE][+-]?\\d+)?[uUlL]*)\\b"
+    },
+    {
+      "scope": "function",
+      "pattern": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\s*\\("
+    }
+  ]
+}

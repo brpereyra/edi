@@ -1,0 +1,14 @@
+{
+  "name": "Prettier Formatter",
+  "version": "1.0.0",
+  "languages": ["javascript", "typescript", "html", "css", "json", "yaml", "markdown"],
+  "hooks": {
+    "on_save": [
+      {
+        "action": "pipe_buffer",
+        "command": "npx prettier --stdin-filepath {file}",
+        "description": "Formatear con Prettier"
+      }
+    ]
+  }
+}
