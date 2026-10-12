@@ -21,8 +21,15 @@ Bienvenido a **edi**, un editor de texto para consola (TUI) rápido, portable y 
 - `Ctrl+P` : **Abrir la Paleta de Comandos** (modal flotante interactivo).
 - `Ctrl+Shift+F` / `Alt+Shift+F` / `Alt+F` : **Buscar en Todos los Archivos (Grep)**. Ventana modal dividida en dos paneles (archivos e incidencias con número de línea y fragmento resaltado). Incluye alternadores de búsqueda: `[Aa]` Case sensitive (`Alt+C`), `[.*]` Expresiones regulares (`Alt+R`) y `[~]` Búsqueda difusa (`Alt+Z`). Navega con `Tab` y abre la coincidencia directamente con `Enter`.
 - `Ctrl+F` : **Buscar texto** en el documento activo (búsqueda cíclica).
-- `Ctrl+G` : **Ir a número de línea** (`goto line`).
+- `Ctrl+G` : **Ir a número de línea / offset** (`goto line`).
 - `F1` : **Ver esta documentación**.
+
+### Modo Binario y Visor Hexadecimal (Imágenes y Binarios)
+Cualquier archivo binario o de imagen (`.png`, `.jpg`, `.gif`, `.wasm`, `.exe`, `.bin`, `.pdf`, etc.) o archivo con bytes nulos (`0x00`) se abre automáticamente en **modo Hexadecimal canónico**:
+- **Estructura**: 16 bytes por línea divididos en bloques de 8 bytes con offset en hexadecimal (`00000000`), bytes hexadecimales y representación en caracteres imprimibles ASCII (`|...|`).
+- **Resaltado y Color**: Los offsets, bytes y texto ASCII se colorean con la sintaxis Hex integrada según el tema activo.
+- **Protección contra Corrupción**: El buffer se abre en **solo lectura** para evitar sobreescrituras accidentales en archivos binarios.
+- **Alternar Vista**: Puedes alternar en cualquier momento entre modo hexadecimal y texto plano abriendo la paleta de comandos (`Ctrl+P` -> *Alternar vista Hexadecimal (Modo Binario)*).
 
 ### Edición y Portapapeles
 - `Shift + Flechas` : **Seleccionar texto** (multi-línea).

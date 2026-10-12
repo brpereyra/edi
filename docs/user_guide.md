@@ -133,6 +133,16 @@ El modal de búsqueda global permite escanear de manera ultra-rápida y asíncro
   - `Enter`: Abre el archivo seleccionado y sitúa el cursor exactamente en la línea y columna del resultado.
   - `Esc`: Cierra el modal y regresa al editor.
 
+### 3.5 Modo Binario y Visor Hexadecimal (Cualquier Binario o Imagen)
+Cuando abres un archivo binario (como una imagen `.png`, `.jpg`, un archivo `.wasm`, ejecutable compilado, archivo `.pdf`, etc.), `edi` lo detecta automáticamente y lo abre en **modo Hexadecimal**:
+- **Formato Canónico (16 bytes por fila)**:
+  - **Offset**: Dirección relativa en 8 caracteres hexadecimales (`00000000`, `00000010`, etc.).
+  - **Bloque Hexadecimal**: Representación en bytes dividida en dos grupos de 8 (`89 50 4E 47 ...`).
+  - **Bloque ASCII**: Representación en caracteres imprimibles delimitada por barras (`|.PNG........IHDR|`).
+- **Resaltado de Sintaxis Hex**: Los offsets, bytes y texto ASCII se colorean automáticamente según el tema activo mediante la sintaxis integrada `Hex`.
+- **Protección de Solo Lectura**: El búfer se bloquea contra modificaciones o sobreescrituras accidentales para proteger la integridad del archivo binario.
+- **Alternar en Caliente**: En cualquier momento puedes ver el volcado hexadecimal de cualquier archivo o volver a texto abriendo la paleta (`Ctrl+P` -> *Alternar vista Hexadecimal (Modo Binario)*).
+
 ---
 
 ## 4. Integración Automática con Git

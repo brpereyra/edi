@@ -180,6 +180,7 @@ func buildDefaultPalette() []PaletteItem {
 		{Title: "Enfocar explorador / editor", Action: "tree:focus", Description: "Ctrl+E"},
 		{Title: "Buscar archivo por nombre en workspace...", Action: "file:find", Description: "Ctrl+O (Fuzzy Finder)"},
 		{Title: "Buscar en todos los archivos del proyecto...", Action: "project:find_in_files", Description: "Ctrl+Shift+F (Grep)"},
+		{Title: "Alternar vista Hexadecimal (Modo Binario)", Action: "buffer:toggle_hex", Description: "Hex / Texto"},
 		{Title: "Nueva pestaña", Action: "buffer:new", Description: "Ctrl+N"},
 		{Title: "Cerrar pestaña", Action: "buffer:close", Description: "Ctrl+W"},
 		{Title: "Siguiente pestaña", Action: "buffer:next", Description: "Alt+Right / Ctrl+Tab"},
@@ -255,11 +256,21 @@ func (e *Editor) OpenHelp() {
 }
 
 func (e *Editor) detectCurrentSyntax() {
-	if e.Buffer != nil && e.Buffer.FilePath != "" {
-		e.CurrentSyntax = syntax.DetectSyntax(e.Buffer.FilePath, e.Syntaxes)
-	} else {
-		e.CurrentSyntax = nil
+	if e.Buffer != nil {
+		if e.Buffer.IsBinary {
+			for _, s := range e.Syntaxes {
+				if strings.EqualFold(s.Name, "Hex") {
+					e.CurrentSyntax = s
+					return
+				}
+			}
+		}
+		if e.Buffer.FilePath != "" {
+			e.CurrentSyntax = syntax.DetectSyntax(e.Buffer.FilePath, e.Syntaxes)
+			return
+		}
 	}
+	e.CurrentSyntax = nil
 }
 
 // SwitchToBuffer cambia el buffer activo al índice indicado.
@@ -335,7 +346,11 @@ func (e *Editor) OpenFile(path string) {
 		e.Buffers[0] = newBuf
 		e.Buffer = newBuf
 		e.detectCurrentSyntax()
-		e.SetStatus(fmt.Sprintf("Abierto '%s'", filepath.Base(clean)), 2*time.Second)
+		if newBuf.IsBinary {
+			e.SetStatus(fmt.Sprintf("Abierto '%s' en modo Hexadecimal (Solo lectura)", filepath.Base(clean)), 3*time.Second)
+		} else {
+			e.SetStatus(fmt.Sprintf("Abierto '%s'", filepath.Base(clean)), 2*time.Second)
+		}
 		return
 	}
 
@@ -346,7 +361,11 @@ func (e *Editor) OpenFile(path string) {
 			e.Screen.PostEvent(tcell.NewEventInterrupt(nil))
 		})
 	}
-	e.SetStatus(fmt.Sprintf("Abierto en pestaña %d: '%s'", len(e.Buffers), filepath.Base(clean)), 2*time.Second)
+	if newBuf.IsBinary {
+		e.SetStatus(fmt.Sprintf("Abierto en pestaña %d: '%s' [Modo Hex / Solo lectura]", len(e.Buffers), filepath.Base(clean)), 3*time.Second)
+	} else {
+		e.SetStatus(fmt.Sprintf("Abierto en pestaña %d: '%s'", len(e.Buffers), filepath.Base(clean)), 2*time.Second)
+	}
 }
 
 func (e *Editor) getWorkspaceDir() string {
@@ -467,7 +486,7 @@ func (e *Editor) Draw() {
 	}
 
 	gutterWidth := 0
-	if e.Config.LineNumbers {
+	if e.Config.LineNumbers && !e.Buffer.IsBinary {
 		totalLines := e.Buffer.LineCount()
 		gutterWidth = len(strconv.Itoa(totalLines)) + 2
 	}
@@ -773,7 +792,9 @@ func (e *Editor) drawTabBar(startX, endX int) {
 		}
 
 		mod := ""
-		if b.Modified {
+		if b.IsBinary {
+			mod = " [hex]"
+		} else if b.Modified {
 			mod = "*"
 		}
 
@@ -815,7 +836,9 @@ func (e *Editor) drawStatusBar(width, y int) {
 	}
 
 	langName := "Texto"
-	if e.CurrentSyntax != nil {
+	if e.Buffer != nil && e.Buffer.IsBinary {
+		langName = "Hex (Solo lectura)"
+	} else if e.CurrentSyntax != nil {
 		langName = e.CurrentSyntax.Name
 	}
 
@@ -837,7 +860,13 @@ func (e *Editor) drawStatusBar(width, y int) {
 	}
 
 	left := fmt.Sprintf(" edi | %s%s%s%s (tab %d/%d)", fileName, modTag, gitInfo, treeStatus, e.ActiveBufferIdx+1, len(e.Buffers))
-	right := fmt.Sprintf("Ln %d, Col %d | %s | %s ", e.Buffer.CursorRow+1, e.Buffer.CursorCol+1, langName, e.Theme.Name)
+	var right string
+	if e.Buffer != nil && e.Buffer.IsBinary {
+		offset := e.Buffer.CursorRow * 16
+		right = fmt.Sprintf("Offset 0x%08X (Fila %d) | %s | %s ", offset, e.Buffer.CursorRow+1, langName, e.Theme.Name)
+	} else {
+		right = fmt.Sprintf("Ln %d, Col %d | %s | %s ", e.Buffer.CursorRow+1, e.Buffer.CursorCol+1, langName, e.Theme.Name)
+	}
 
 	col := 0
 	for _, ch := range left {
@@ -1328,7 +1357,9 @@ func (e *Editor) handleMouseClick(mx, my int) {
 				name = filepath.Base(name)
 			}
 			mod := ""
-			if b.Modified {
+			if b.IsBinary {
+				mod = " [hex]"
+			} else if b.Modified {
 				mod = "*"
 			}
 			tabTitle := fmt.Sprintf(" %d:%s%s ", i+1, name, mod)
@@ -1520,23 +1551,39 @@ func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 		e.Buffer.CursorRow += height - 3
 		e.Buffer.ClampCursor()
 	case tcell.KeyEnter:
+		if e.Buffer.ReadOnly || e.Buffer.IsBinary {
+			e.SetStatus("Modo Binario / Hex (Solo lectura)", 2*time.Second)
+			return
+		}
 		if e.Selecting {
 			e.deleteSelection()
 		}
 		e.Buffer.SplitLine(e.Config.AutoIndent)
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		if e.Buffer.ReadOnly || e.Buffer.IsBinary {
+			e.SetStatus("Modo Binario / Hex (Solo lectura)", 2*time.Second)
+			return
+		}
 		if e.Selecting {
 			e.deleteSelection()
 		} else {
 			e.Buffer.DeleteRune()
 		}
 	case tcell.KeyDelete:
+		if e.Buffer.ReadOnly || e.Buffer.IsBinary {
+			e.SetStatus("Modo Binario / Hex (Solo lectura)", 2*time.Second)
+			return
+		}
 		if e.Selecting {
 			e.deleteSelection()
 		} else {
 			e.Buffer.DeleteForwardRune()
 		}
 	case tcell.KeyTab:
+		if e.Buffer.ReadOnly || e.Buffer.IsBinary {
+			e.SetStatus("Modo Binario / Hex (Solo lectura)", 2*time.Second)
+			return
+		}
 		if e.Config.ExpandTabs {
 			for i := 0; i < e.Config.TabSize; i++ {
 				e.Buffer.InsertRune(' ')
@@ -1545,6 +1592,10 @@ func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 			e.Buffer.InsertRune('\t')
 		}
 	case tcell.KeyRune:
+		if e.Buffer.ReadOnly || e.Buffer.IsBinary {
+			e.SetStatus("Modo Binario / Hex (Solo lectura)", 2*time.Second)
+			return
+		}
 		if e.Selecting {
 			e.deleteSelection()
 		}
@@ -1785,6 +1836,10 @@ func (e *Editor) executeAction(action string) {
 		e.SetStatus("Copiado al portapapeles", 1*time.Second)
 
 	case "selection:cut":
+		if e.Buffer.ReadOnly || e.Buffer.IsBinary {
+			e.SetStatus("Modo Binario / Hex (Solo lectura)", 2*time.Second)
+			return
+		}
 		text := e.getSelectedText()
 		if text != "" {
 			e.Clipboard = text
@@ -1797,6 +1852,10 @@ func (e *Editor) executeAction(action string) {
 		}
 
 	case "selection:paste":
+		if e.Buffer.ReadOnly || e.Buffer.IsBinary {
+			e.SetStatus("Modo Binario / Hex (Solo lectura)", 2*time.Second)
+			return
+		}
 		e.pasteText(e.Clipboard)
 		e.SetStatus("Pegado desde portapapeles", 1*time.Second)
 
@@ -1861,10 +1920,22 @@ func (e *Editor) executeAction(action string) {
 		e.PromptText = ""
 		e.updatePaletteFilter()
 	case "line:duplicate":
+		if e.Buffer.ReadOnly || e.Buffer.IsBinary {
+			e.SetStatus("Modo Binario / Hex (Solo lectura)", 2*time.Second)
+			return
+		}
 		e.Buffer.DuplicateLine()
 	case "line:delete":
+		if e.Buffer.ReadOnly || e.Buffer.IsBinary {
+			e.SetStatus("Modo Binario / Hex (Solo lectura)", 2*time.Second)
+			return
+		}
 		e.Buffer.DeleteLine()
 	case "line:move_up":
+		if e.Buffer.ReadOnly || e.Buffer.IsBinary {
+			e.SetStatus("Modo Binario / Hex (Solo lectura)", 2*time.Second)
+			return
+		}
 		if e.Selecting {
 			startRow, endRow := e.SelectAnchorRow, e.Buffer.CursorRow
 			if startRow > endRow {
@@ -1879,6 +1950,10 @@ func (e *Editor) executeAction(action string) {
 			e.Buffer.MoveLineUp()
 		}
 	case "line:move_down":
+		if e.Buffer.ReadOnly || e.Buffer.IsBinary {
+			e.SetStatus("Modo Binario / Hex (Solo lectura)", 2*time.Second)
+			return
+		}
 		if e.Selecting {
 			startRow, endRow := e.SelectAnchorRow, e.Buffer.CursorRow
 			if startRow > endRow {
@@ -1892,6 +1967,32 @@ func (e *Editor) executeAction(action string) {
 		} else {
 			e.Buffer.MoveLineDown()
 		}
+	case "buffer:toggle_hex":
+		if e.Buffer.FilePath == "" {
+			e.SetStatus("El búfer actual no tiene archivo asociado", 2*time.Second)
+			return
+		}
+		path := e.Buffer.FilePath
+		var newBuf *buffer.Buffer
+		var err error
+		if e.Buffer.IsBinary {
+			newBuf, err = buffer.NewBufferFromFileForceText(path)
+			if err != nil {
+				e.SetStatus(fmt.Sprintf("Error abriendo como texto: %v", err), 3*time.Second)
+				return
+			}
+			e.SetStatus("Modo cambiado a Texto Plano", 2*time.Second)
+		} else {
+			newBuf, err = buffer.NewBufferFromFileForceHex(path)
+			if err != nil {
+				e.SetStatus(fmt.Sprintf("Error abriendo como hexadecimal: %v", err), 3*time.Second)
+				return
+			}
+			e.SetStatus("Modo cambiado a Hexadecimal (Solo lectura)", 2*time.Second)
+		}
+		e.Buffers[e.ActiveBufferIdx] = newBuf
+		e.Buffer = newBuf
+		e.detectCurrentSyntax()
 	case "theme:dracula":
 		if th, err := theme.LoadTheme("dracula"); err == nil {
 			e.Theme = th
@@ -2139,6 +2240,10 @@ func (e *Editor) pasteText(text string) {
 }
 
 func (e *Editor) saveFile() {
+	if e.Buffer.ReadOnly || e.Buffer.IsBinary {
+		e.SetStatus("No se puede sobreescribir un archivo en modo binario (Solo lectura)", 3*time.Second)
+		return
+	}
 	if e.Buffer.FilePath == "" {
 		e.PromptMode = PromptSaveAs
 		e.PromptText = ""

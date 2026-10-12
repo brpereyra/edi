@@ -720,4 +720,63 @@ func TestGlobalSearchOptionsToggleAndMouse(t *testing.T) {
 	}
 }
 
+func TestEditorBinaryFileOpenAndHexView(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("error inicializando pantalla de simulación: %v", err)
+	}
+	defer screen.Fini()
+	screen.SetSize(100, 30)
+
+	tmpDir := t.TempDir()
+	imagePath := filepath.Join(tmpDir, "logo.png")
+	pngBytes := []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 'I', 'H', 'D', 'R', 0x00, 0x01}
+	_ = os.WriteFile(imagePath, pngBytes, 0644)
+
+	buf := buffer.NewEmptyBuffer()
+	cfg := config.DefaultConfig()
+	ed, err := NewEditor(screen, buf, &cfg)
+	if err != nil {
+		t.Fatalf("error creando editor: %v", err)
+	}
+
+	// 1. Abrir archivo de imagen binario
+	ed.OpenFile(imagePath)
+
+	if !ed.Buffer.IsBinary {
+		t.Errorf("se esperaba ed.Buffer.IsBinary == true para imagen")
+	}
+	if !ed.Buffer.ReadOnly {
+		t.Errorf("se esperaba ed.Buffer.ReadOnly == true para imagen")
+	}
+
+	// 2. Renderizar (debe renderizar modo hex sin gutter y con sintaxis Hex)
+	ed.Draw()
+
+	// 3. Intentar escribir caracteres (debe bloquearse y mostrar aviso)
+	linesBefore := len(ed.Buffer.Lines)
+	ed.HandleEvent(tcell.NewEventKey(tcell.KeyRune, 'Z', 0))
+	if len(ed.Buffer.Lines) != linesBefore {
+		t.Errorf("no se debería modificar el buffer en modo binario")
+	}
+
+	// 4. Intentar guardar (debe bloquearse y mostrar aviso)
+	ed.executeAction("buffer:save")
+	if ed.Buffer.Modified {
+		t.Errorf("el buffer no debe marcarse como modificado")
+	}
+
+	// 5. Probar acción toggle_hex
+	ed.executeAction("buffer:toggle_hex")
+	if ed.Buffer.IsBinary {
+		t.Errorf("se esperaba que toggle_hex conmutara a texto")
+	}
+
+	ed.executeAction("buffer:toggle_hex")
+	if !ed.Buffer.IsBinary {
+		t.Errorf("se esperaba que toggle_hex regresara a modo hexadecimal")
+	}
+}
+
+
 

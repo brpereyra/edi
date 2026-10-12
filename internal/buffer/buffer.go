@@ -2,10 +2,13 @@ package buffer
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 // Snapshot representa un estado completo del texto para Undo/Redo.
@@ -27,6 +30,119 @@ type Buffer struct {
 	undoStack  []Snapshot
 	redoStack  []Snapshot
 	maxHistory int
+
+	// Soporte de modo binario / hexadecimal
+	IsBinary bool
+	ReadOnly bool
+}
+
+// binaryExtensions lista extensiones comunes que siempre deben abrirse en modo binario.
+var binaryExtensions = map[string]bool{
+	".png":   true,
+	".jpg":   true,
+	".jpeg":  true,
+	".gif":   true,
+	".webp":  true,
+	".bmp":   true,
+	".ico":   true,
+	".tiff":  true,
+	".tif":   true,
+	".svgz":  true,
+	".exe":   true,
+	".bin":   true,
+	".so":    true,
+	".dylib": true,
+	".dll":   true,
+	".wasm":  true,
+	".zip":   true,
+	".tar":   true,
+	".gz":    true,
+	".bz2":   true,
+	".xz":    true,
+	".7z":    true,
+	".pdf":   true,
+	".mp3":   true,
+	".mp4":   true,
+	".wav":   true,
+	".ogg":   true,
+	".avi":   true,
+	".mkv":   true,
+	".flac":  true,
+	".iso":   true,
+	".dmg":   true,
+	".class": true,
+	".o":     true,
+	".a":     true,
+	".pyc":   true,
+}
+
+// IsBinaryData determina si una muestra de bytes contiene indicios claros de ser binario.
+func IsBinaryData(sample []byte) bool {
+	if len(sample) == 0 {
+		return false
+	}
+	// Byte nulo (0x00) es el indicador estándar
+	if bytes.IndexByte(sample, 0) != -1 {
+		return true
+	}
+	// Caracteres UTF-8 inválidos
+	if !utf8.Valid(sample) {
+		return true
+	}
+	// Proporción de caracteres de control no imprimibles (excluyendo \t, \n, \r)
+	nonPrintable := 0
+	for _, b := range sample {
+		if b < 32 && b != '\t' && b != '\n' && b != '\r' {
+			nonPrintable++
+		}
+	}
+	return float64(nonPrintable)/float64(len(sample)) > 0.10
+}
+
+// FormatHexDump genera un volcado hexadecimal clásico (16 bytes por línea con offset y ASCII).
+func FormatHexDump(data []byte) []string {
+	if len(data) == 0 {
+		return []string{"00000000                                                   ||"}
+	}
+	var lines []string
+	total := len(data)
+	for offset := 0; offset < total; offset += 16 {
+		chunkLen := 16
+		if offset+chunkLen > total {
+			chunkLen = total - offset
+		}
+		chunk := data[offset : offset+chunkLen]
+
+		var sb strings.Builder
+		sb.Grow(78)
+		sb.WriteString(fmt.Sprintf("%08X  ", offset))
+
+		for i := 0; i < 16; i++ {
+			if i == 8 {
+				sb.WriteByte(' ')
+			}
+			if i < chunkLen {
+				sb.WriteString(fmt.Sprintf("%02X ", chunk[i]))
+			} else {
+				sb.WriteString("   ")
+			}
+		}
+		sb.WriteByte(' ')
+
+		sb.WriteByte('|')
+		for i := 0; i < chunkLen; i++ {
+			b := chunk[i]
+			if b >= 32 && b <= 126 {
+				sb.WriteByte(b)
+			} else {
+				sb.WriteByte('.')
+			}
+		}
+		sb.WriteByte('|')
+
+		lines = append(lines, sb.String())
+	}
+	return lines
 }
 
 // NewEmptyBuffer crea un buffer vacío con una sola línea en blanco.
@@ -37,8 +153,22 @@ func NewEmptyBuffer() *Buffer {
 	}
 }
 
-// NewBufferFromFile lee un archivo desde el disco y crea un buffer.
+// NewBufferFromFile lee un archivo desde el disco y crea un buffer. Si el archivo es binario, lo abre en modo Hex.
 func NewBufferFromFile(path string) (*Buffer, error) {
+	return newBufferFromFileInternal(path, false, false)
+}
+
+// NewBufferFromFileForceHex fuerza la apertura del archivo en modo hexadecimal.
+func NewBufferFromFileForceHex(path string) (*Buffer, error) {
+	return newBufferFromFileInternal(path, true, false)
+}
+
+// NewBufferFromFileForceText fuerza la apertura del archivo como texto plano.
+func NewBufferFromFileForceText(path string) (*Buffer, error) {
+	return newBufferFromFileInternal(path, false, true)
+}
+
+func newBufferFromFileInternal(path string, forceHex, forceText bool) (*Buffer, error) {
 	b := &Buffer{
 		FilePath:   path,
 		maxHistory: 100,
@@ -47,7 +177,6 @@ func NewBufferFromFile(path string) (*Buffer, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Si el archivo no existe todavía, lo inicializamos como nuevo
 			b.Lines = []string{""}
 			return b, nil
 		}
@@ -55,11 +184,71 @@ func NewBufferFromFile(path string) (*Buffer, error) {
 	}
 	defer file.Close()
 
+	info, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("error obteniendo información de %s: %w", path, err)
+	}
+
+	isBin := false
+	if !forceText && info.Size() > 0 {
+		if forceHex {
+			isBin = true
+		} else {
+			ext := strings.ToLower(filepath.Ext(path))
+			if binaryExtensions[ext] {
+				isBin = true
+			} else {
+				header := make([]byte, 4096)
+				n, _ := file.Read(header)
+				_, _ = file.Seek(0, io.SeekStart)
+				if n > 0 && IsBinaryData(header[:n]) {
+					isBin = true
+				}
+			}
+		}
+	}
+
+	if isBin {
+		const maxBinSize = 10 * 1024 * 1024
+		readLimit := info.Size()
+		truncated := false
+		if readLimit > maxBinSize {
+			readLimit = maxBinSize
+			truncated = true
+		}
+
+		data := make([]byte, readLimit)
+		n, err := io.ReadFull(file, data)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			return nil, fmt.Errorf("error leyendo archivo binario %s: %w", path, err)
+		}
+		data = data[:n]
+
+		b.Lines = FormatHexDump(data)
+		if truncated {
+			b.Lines = append(b.Lines, fmt.Sprintf("[Visualización truncada a %d MB]", maxBinSize/(1024*1024)))
+		}
+		b.IsBinary = true
+		b.ReadOnly = true
+		return b, nil
+	}
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		b.Lines = append(b.Lines, scanner.Text())
 	}
 	if err := scanner.Err(); err != nil {
+		if !forceText {
+			// Si falla la lectura por líneas excesivas o caracteres inválidos, abrir en modo hex automáticamente
+			_, _ = file.Seek(0, io.SeekStart)
+			data, readErr := io.ReadAll(io.LimitReader(file, 10*1024*1024))
+			if readErr == nil && len(data) > 0 {
+				b.Lines = FormatHexDump(data)
+				b.IsBinary = true
+				b.ReadOnly = true
+				return b, nil
+			}
+		}
 		return nil, fmt.Errorf("error leyendo archivo %s: %w", path, err)
 	}
 
@@ -146,6 +335,9 @@ func (b *Buffer) Redo() bool {
 
 // InsertRune inserta un carácter en la posición del cursor actual.
 func (b *Buffer) InsertRune(r rune) {
+	if b.ReadOnly {
+		return
+	}
 	b.recordSnapshot()
 	b.ClampCursor()
 
@@ -163,6 +355,9 @@ func (b *Buffer) InsertRune(r rune) {
 
 // SplitLine divide la línea actual en dos en la posición del cursor (tecla Enter).
 func (b *Buffer) SplitLine(autoIndent bool) {
+	if b.ReadOnly {
+		return
+	}
 	b.recordSnapshot()
 	b.ClampCursor()
 
@@ -197,6 +392,9 @@ func (b *Buffer) SplitLine(autoIndent bool) {
 
 // DeleteRune elimina el carácter antes del cursor (Backspace).
 func (b *Buffer) DeleteRune() {
+	if b.ReadOnly {
+		return
+	}
 	b.ClampCursor()
 
 	if b.CursorCol > 0 {
@@ -224,6 +422,9 @@ func (b *Buffer) DeleteRune() {
 
 // DeleteForwardRune elimina el carácter bajo el cursor (tecla Supr / Delete).
 func (b *Buffer) DeleteForwardRune() {
+	if b.ReadOnly {
+		return
+	}
 	b.ClampCursor()
 	runes := []rune(b.Lines[b.CursorRow])
 
@@ -244,6 +445,9 @@ func (b *Buffer) DeleteForwardRune() {
 
 // DuplicateLine duplica la línea actual en la posición siguiente.
 func (b *Buffer) DuplicateLine() {
+	if b.ReadOnly {
+		return
+	}
 	b.recordSnapshot()
 	b.ClampCursor()
 
@@ -255,6 +459,9 @@ func (b *Buffer) DuplicateLine() {
 
 // DeleteLine elimina la línea donde se encuentra el cursor.
 func (b *Buffer) DeleteLine() {
+	if b.ReadOnly {
+		return
+	}
 	b.recordSnapshot()
 	if len(b.Lines) <= 1 {
 		b.Lines = []string{""}
@@ -272,7 +479,7 @@ func (b *Buffer) DeleteLine() {
 
 // MoveLinesUp mueve un rango de líneas [startRow, endRow] hacia arriba intercambiándolo con la línea anterior.
 func (b *Buffer) MoveLinesUp(startRow, endRow int) bool {
-	if startRow <= 0 || startRow > endRow || endRow >= len(b.Lines) {
+	if b.ReadOnly || startRow <= 0 || startRow > endRow || endRow >= len(b.Lines) {
 		return false
 	}
 
@@ -289,7 +496,7 @@ func (b *Buffer) MoveLinesUp(startRow, endRow int) bool {
 
 // MoveLinesDown mueve un rango de líneas [startRow, endRow] hacia abajo intercambiándolo con la línea siguiente.
 func (b *Buffer) MoveLinesDown(startRow, endRow int) bool {
-	if endRow >= len(b.Lines)-1 || startRow > endRow || startRow < 0 {
+	if b.ReadOnly || endRow >= len(b.Lines)-1 || startRow > endRow || startRow < 0 {
 		return false
 	}
 
@@ -352,6 +559,10 @@ func (b *Buffer) ClampCursor() {
 
 // Save guarda el buffer en su ruta de archivo asignada.
 func (b *Buffer) Save() error {
+	if b.ReadOnly || b.IsBinary {
+		return fmt.Errorf("archivo en modo binario / solo lectura no puede guardarse")
+	}
+
 	if b.FilePath == "" {
 		return fmt.Errorf("no hay ruta de archivo asignada para guardar")
 	}

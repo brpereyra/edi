@@ -16,6 +16,7 @@ Un editor de texto en consola (TUI) moderno, rápido, altamente personalizable y
 - **Paleta de Comandos Modal (`Ctrl+P`)**: Ventana flotante interactiva con navegación `↑`/`↓`, búsqueda difusa y cambio de temas en caliente.
 - **Buscador Rápido de Archivos (`Ctrl+O`)**: Selector difuso instantáneo que descubre archivos en el proyecto ignorando `.git` o dependencias.
 - **Búsqueda Global en Archivos (`Ctrl+Shift+F` / `Alt+Shift+F` / `Alt+F`)**: Modal de búsqueda tipo Grep en 2 paneles (archivos e incidencias con número de línea y fragmento coloreado), alternador de opciones: `[Aa]` (Case Sensitive), `[.*]` (Expresiones Regulares), `[~]` (Búsqueda Difusa), navegación con `Tab` y apertura instantánea.
+- **Modo Binario y Visor Hexadecimal Automático**: Detección inteligente de cualquier archivo binario o imagen (`.png`, `.jpg`, `.gif`, `.wasm`, `.exe`, etc.). Se abre en volcado hexadecimal canónico (16 bytes/línea con offset y ASCII) con protección contra corrupción (solo lectura) y sintaxis Hex coloreada.
 - **Pestañas y Múltiples Buffers (`Ctrl+N`, `Ctrl+W`, `Ctrl+Tab`, `Alt+1..9`)**: Barra superior visual con soporte para múltiples archivos simultáneos e indicador de estado `*`.
 - **Selección de Texto y Portapapeles (`Ctrl+C`, `Ctrl+X`, `Ctrl+V`)**: Selección multi-línea con `Shift + Flechas`, copiar, cortar y pegar.
 - **Historial Undo/Redo**: Deshacer (`Ctrl+Z`) y Rehacer (`Ctrl+Y`) multinivel.
