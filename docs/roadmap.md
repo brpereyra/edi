@@ -32,9 +32,10 @@ El foco de esta fase es expandir la ergonomía de trabajo en proyectos de median
 - [ ] Capacidad de ver el mismo buffer en dos paneles independientes (scroll independiente).
 
 ### 2. Búsqueda Global en el Proyecto (Project-wide Search)
-- [ ] Modal interactivo (`Ctrl+Shift+F`) para buscar texto en todos los archivos del workspace.
-- [ ] Integración con algoritmo de búsqueda en paralelo nativo en Go.
-- [ ] Salto directo a la línea y columna del resultado seleccionado.
+- [x] Modal interactivo (`Ctrl+Shift+F` / `Alt+F`) en 2 paneles (archivos e incidencias con fragmento destacado).
+- [x] Motor de búsqueda en paralelo nativo en Go puro (`internal/search`) con cancelación (`context.Context`) y debounce.
+- [x] Opciones configurables en caliente: Case Sensitive `[Aa]`, Regex `[.*]` y Fuzzy `[~]` (teclado `Alt+C/R/Z` o clic de ratón).
+- [x] Salto directo al archivo, fila y columna del resultado seleccionado con `Enter`.
 
 ### 3. Ajuste de Línea (Soft Wrap)
 - [ ] Opción en `config.json` (`"word_wrap": true/false`).

@@ -14,6 +14,7 @@ graph TD
     Editor --> Buffer["internal/buffer (Modelo de texto y Undo/Redo)"]
     Editor --> Tree["internal/tree (Árbol de archivos lateral)"]
     Editor --> Git["internal/git (Gestor asíncrono de Git)"]
+    Editor --> Search["internal/search (Motor de búsqueda concurrente)"]
     Editor --> Syntax["internal/syntax (Resaltado declarativo Regex)"]
     Editor --> Theme["internal/theme (Paleta TrueColor RGB)"]
     Editor --> Config["internal/config (JSONC y Atajos de teclado)"]
@@ -65,6 +66,15 @@ graph TD
   - `queryGitStatus`: Ejecuta `git status --porcelain=v1 -uall` y `git branch --show-current`.
   - **Concurrencia thread-safe**: Almacena el snapshot bajo `sync.RWMutex`.
   - `RefreshAsync`: Dispara consultas asíncronas en goroutines en segundo plano. Cuando finaliza, notifica al editor mediante `Screen.PostEvent(tcell.NewEventInterrupt(nil))`, provocando un redibujado instantáneo sin bloquear la interacción del usuario.
+
+### `internal/search`
+- **Responsabilidad**: Motor de búsqueda concurrente en archivos de texto del proyecto.
+- **Mecanismos clave**:
+  - `SearchWorkspace`: Escaneo recursivo concurrente con pool de workers (`sync.WaitGroup` y canales Go).
+  - Detección automática de archivos binarios mediante inspección de primeros bytes nulos (`0x00`).
+  - Omitido de carpetas especiales e ignoradas (`.git`, `node_modules`, `vendor`, etc.) y archivos mayores a 5MB.
+  - Soporte de cancelación mediante `context.Context` para abortar búsquedas en curso al seguir tecleando.
+  - Modos de búsqueda: coincidencia exacta, distinción de mayúsculas/minúsculas, expresiones regulares (*Regex*) y subsecuencia difusa (*Fuzzy*).
 
 ### `internal/tree`
 - **Responsabilidad**: Árbol jerárquico interactivo del sistema de archivos (`Ctrl+B`).

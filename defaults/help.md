@@ -19,6 +19,7 @@ Bienvenido a **edi**, un editor de texto para consola (TUI) rápido, portable y 
 
 ### Paleta de Comandos y Búsqueda
 - `Ctrl+P` : **Abrir la Paleta de Comandos** (modal flotante interactivo).
+- `Ctrl+Shift+F` / `Alt+Shift+F` / `Alt+F` : **Buscar en Todos los Archivos (Grep)**. Ventana modal dividida en dos paneles (archivos e incidencias con número de línea y fragmento resaltado). Incluye alternadores de búsqueda: `[Aa]` Case sensitive (`Alt+C`), `[.*]` Expresiones regulares (`Alt+R`) y `[~]` Búsqueda difusa (`Alt+Z`). Navega con `Tab` y abre la coincidencia directamente con `Enter`.
 - `Ctrl+F` : **Buscar texto** en el documento activo (búsqueda cíclica).
 - `Ctrl+G` : **Ir a número de línea** (`goto line`).
 - `F1` : **Ver esta documentación**.

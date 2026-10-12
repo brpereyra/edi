@@ -105,6 +105,7 @@ edi nuevo_archivo.txt
 | `Ctrl+K` | **Eliminar línea** | Borra por completo la línea donde está el cursor. |
 | `Alt+Up` / `Ctrl+Up` | **Mover línea arriba** | Desplaza la línea o bloque seleccionado una fila arriba. |
 | `Alt+Down` / `Ctrl+Down` | **Mover línea abajo** | Desplaza la línea o bloque seleccionado una fila abajo. |
+| `Ctrl+Shift+F` / `Alt+F` | **Buscar en todo el proyecto** | Grep interactivo en 2 paneles con resaltado de sintaxis y filtros. |
 | `Ctrl+F` | **Buscar texto** | Búsqueda cíclica dentro del archivo actual. |
 | `Ctrl+G` | **Ir a línea** | Salto numérico directo a una fila específica. |
 | `F1` | **Documentación interna** | Abre la guía de ayuda integrada en una pestaña virtual. |
@@ -115,6 +116,22 @@ edi nuevo_archivo.txt
 - `→` / `←` : Expandir o colapsar carpetas.
 - `a` / `n` : Crear un nuevo archivo directamente dentro del directorio seleccionado.
 - `Tab` / `Esc` : Devolver el foco al editor de texto.
+
+### 3.4 Búsqueda Global en Archivos (`Ctrl+Shift+F` / `Alt+F`)
+El modal de búsqueda global permite escanear de manera ultra-rápida y asíncrona todos los archivos de texto del proyecto:
+- **Diseño en 2 Paneles**:
+  - **Panel Izquierdo (Archivos)**: Muestra las rutas relativas de los archivos que contienen coincidencias y un distintivo con la cantidad de incidencias `(N)`.
+  - **Panel Derecho (Incidencias)**: Desglosa cada ocurrencia con su número de línea (`L.<número>`) y el fragmento de la línea con el término buscado destacado en negrita y color temático.
+- **Alternadores de Búsqueda**:
+  - `[Aa]` (`Alt+C` o clic de ratón): Activa/desactiva distinción entre mayúsculas y minúsculas (*Case sensitive*).
+  - `[.*]` (`Alt+R` o clic de ratón): Permite el uso de expresiones regulares estándar de Go (*Regex*).
+  - `[~]` (`Alt+Z` o clic de ratón): Habilita búsqueda aproximada/difusa (*Fuzzy subsequence search*).
+- **Navegación e Interacción**:
+  - `Tab` / `Backtab`: Alterna el foco entre el campo de texto, la lista de archivos y la lista de coincidencias.
+  - `↑` / `↓` / `PgUp` / `PgDn`: Desplazamiento ágil entre archivos e incidencias.
+  - `→` / `←`: Conmutación rápida entre archivos e incidencias.
+  - `Enter`: Abre el archivo seleccionado y sitúa el cursor exactamente en la línea y columna del resultado.
+  - `Esc`: Cierra el modal y regresa al editor.
 
 ---
 

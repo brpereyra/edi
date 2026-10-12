@@ -1,11 +1,13 @@
 package editor
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"edi/defaults"
@@ -13,6 +15,7 @@ import (
 	"edi/internal/config"
 	"edi/internal/git"
 	"edi/internal/plugin"
+	"edi/internal/search"
 	"edi/internal/syntax"
 	"edi/internal/theme"
 	"edi/internal/tree"
@@ -32,6 +35,7 @@ const (
 	PromptSaveAs
 	PromptPalette
 	PromptFileFinder
+	PromptGlobalSearch
 )
 
 // PaletteItem representa un comando en la paleta de acciones rápidas.
@@ -87,6 +91,22 @@ type Editor struct {
 	FilteredFiles    []string
 	FileFinderIdx    int
 	FileFinderScroll int
+
+	// Búsqueda global en archivos del proyecto
+	SearchCaseSensitive    bool
+	SearchRegex            bool
+	SearchFuzzy            bool
+	SearchPanel            int // 0 = Input, 1 = Archivos (izq), 2 = Incidencias (der)
+	SearchResults          []search.FileSearchResult
+	SearchTotalMatches     int
+	SelectedSearchFileIdx  int
+	SelectedSearchMatchIdx int
+	SearchFilesScroll      int
+	SearchMatchesScroll    int
+	SearchSearching        bool
+	SearchError            string
+	SearchCancelFunc       context.CancelFunc
+	SearchMutex            sync.Mutex
 }
 
 // NewEditor crea e inicializa una nueva instancia del editor.
@@ -159,6 +179,7 @@ func buildDefaultPalette() []PaletteItem {
 		{Title: "Alternar posición del explorador (Izquierda/Derecha)", Action: "view:toggle_sidebar_pos", Description: "Configurar posición"},
 		{Title: "Enfocar explorador / editor", Action: "tree:focus", Description: "Ctrl+E"},
 		{Title: "Buscar archivo por nombre en workspace...", Action: "file:find", Description: "Ctrl+O (Fuzzy Finder)"},
+		{Title: "Buscar en todos los archivos del proyecto...", Action: "project:find_in_files", Description: "Ctrl+Shift+F (Grep)"},
 		{Title: "Nueva pestaña", Action: "buffer:new", Description: "Ctrl+N"},
 		{Title: "Cerrar pestaña", Action: "buffer:close", Description: "Ctrl+W"},
 		{Title: "Siguiente pestaña", Action: "buffer:next", Description: "Alt+Right / Ctrl+Tab"},
@@ -566,6 +587,8 @@ func (e *Editor) Draw() {
 		e.drawFileFinderModal(width, height)
 	} else if e.PromptMode == PromptSaveAs {
 		e.drawSaveAsModal(width, height)
+	} else if e.PromptMode == PromptGlobalSearch {
+		e.drawGlobalSearchModal(width, height)
 	} else if e.PromptMode != PromptNone {
 		e.Screen.ShowCursor(e.PromptCursor, height-1)
 	} else if e.SidebarOpen && e.SidebarFocus {
@@ -851,7 +874,7 @@ func (e *Editor) drawBottomBar(width, y int) {
 		e.drawString(0, y, prompt, e.Theme.DefaultStyle)
 		e.PromptCursor = len([]rune("Ir a línea: ")) + len([]rune(e.PromptText))
 
-	case PromptPalette, PromptFileFinder, PromptSaveAs:
+	case PromptPalette, PromptFileFinder, PromptSaveAs, PromptGlobalSearch:
 		e.drawString(1, y, "Modal activo (Presiona Esc para cancelar)", e.Theme.LineNumberStyle)
 
 	default:
@@ -1246,7 +1269,9 @@ func (e *Editor) HandleEvent(ev tcell.Event) {
 		}
 
 	case *tcell.EventKey:
-		if e.PromptMode != PromptNone {
+		if e.PromptMode == PromptGlobalSearch {
+			e.handleGlobalSearchKey(ev)
+		} else if e.PromptMode != PromptNone {
 			e.handlePromptKey(ev)
 		} else if e.SidebarOpen && e.SidebarFocus {
 			e.handleSidebarKey(ev)
@@ -1257,6 +1282,10 @@ func (e *Editor) HandleEvent(ev tcell.Event) {
 }
 
 func (e *Editor) handleMouseClick(mx, my int) {
+	if e.PromptMode == PromptGlobalSearch {
+		e.handleGlobalSearchMouse(mx, my)
+		return
+	}
 	if e.PromptMode != PromptNone {
 		return
 	}
@@ -1434,6 +1463,10 @@ func (e *Editor) handleSidebarKey(ev *tcell.EventKey) {
 
 func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 	chord := keyToString(ev)
+	if chord == "Ctrl+Shift+F" || chord == "Alt+Shift+F" || chord == "Alt+F" {
+		e.openGlobalSearchModal()
+		return
+	}
 	if action, ok := e.Keybindings[chord]; ok {
 		e.executeAction(action)
 		return
@@ -1701,6 +1734,9 @@ func (e *Editor) executeAction(action string) {
 		e.FileFinderScroll = 0
 		e.PromptMode = PromptFileFinder
 		e.PromptText = ""
+
+	case "project:find_in_files":
+		e.openGlobalSearchModal()
 
 	case "buffer:new":
 		newBuf := buffer.NewEmptyBuffer()
@@ -2254,6 +2290,9 @@ func keyToString(ev *tcell.EventKey) string {
 	case tcell.KeyCtrlE:
 		return "Ctrl+E"
 	case tcell.KeyCtrlF:
+		if ev.Modifiers()&tcell.ModShift != 0 {
+			return "Ctrl+Shift+F"
+		}
 		return "Ctrl+F"
 	case tcell.KeyCtrlG:
 		return "Ctrl+G"
@@ -2316,8 +2355,840 @@ func keyToString(ev *tcell.EventKey) string {
 	}
 
 	if ev.Key() == tcell.KeyRune {
-		return prefix + string(ev.Rune())
+		r := ev.Rune()
+		if ev.Modifiers()&tcell.ModAlt != 0 {
+			if r == 'F' || (ev.Modifiers()&tcell.ModShift != 0 && (r == 'f' || r == 'F')) {
+				return "Alt+Shift+F"
+			}
+			if r == 'f' {
+				return "Alt+F"
+			}
+		}
+		return prefix + string(r)
 	}
 
 	return ""
 }
+
+func (e *Editor) openGlobalSearchModal() {
+	e.SearchMutex.Lock()
+	if e.SearchCancelFunc != nil {
+		e.SearchCancelFunc()
+		e.SearchCancelFunc = nil
+	}
+	e.PromptMode = PromptGlobalSearch
+	e.SearchPanel = 0
+	e.SearchResults = nil
+	e.SearchTotalMatches = 0
+	e.SelectedSearchFileIdx = 0
+	e.SelectedSearchMatchIdx = 0
+	e.SearchFilesScroll = 0
+	e.SearchMatchesScroll = 0
+	e.SearchSearching = false
+	e.SearchError = ""
+
+	initialQuery := ""
+	if e.Selecting && e.Buffer != nil {
+		sel := e.getSelectedText()
+		if !strings.Contains(sel, "\n") && len(sel) > 0 && len(sel) < 80 {
+			initialQuery = sel
+		}
+	}
+	e.PromptText = initialQuery
+	e.SearchMutex.Unlock()
+
+	if initialQuery != "" {
+		e.triggerGlobalSearchAsync()
+	}
+}
+
+func (e *Editor) triggerGlobalSearchAsync() {
+	e.SearchMutex.Lock()
+	if e.SearchCancelFunc != nil {
+		e.SearchCancelFunc()
+		e.SearchCancelFunc = nil
+	}
+	query := e.PromptText
+	if strings.TrimSpace(query) == "" {
+		e.SearchResults = nil
+		e.SearchTotalMatches = 0
+		e.SelectedSearchFileIdx = 0
+		e.SelectedSearchMatchIdx = 0
+		e.SearchFilesScroll = 0
+		e.SearchMatchesScroll = 0
+		e.SearchSearching = false
+		e.SearchError = ""
+		e.SearchMutex.Unlock()
+		if e.Screen != nil {
+			e.Screen.PostEvent(tcell.NewEventInterrupt(nil))
+		}
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	e.SearchCancelFunc = cancel
+	e.SearchSearching = true
+	e.SearchError = ""
+	opts := search.SearchOptions{
+		Query:         query,
+		CaseSensitive: e.SearchCaseSensitive,
+		Regex:         e.SearchRegex,
+		Fuzzy:         e.SearchFuzzy,
+		MaxMatches:    500,
+	}
+	root := e.getWorkspaceDir()
+	e.SearchMutex.Unlock()
+
+	go func(ctx context.Context, q string, searchOpts search.SearchOptions, dir string) {
+		time.Sleep(60 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		results, total, err := search.SearchWorkspace(ctx, dir, searchOpts)
+
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		e.SearchMutex.Lock()
+		if e.PromptMode == PromptGlobalSearch && e.PromptText == q {
+			if err != nil && err != context.Canceled {
+				e.SearchError = err.Error()
+				e.SearchResults = nil
+				e.SearchTotalMatches = 0
+			} else {
+				e.SearchError = ""
+				e.SearchResults = results
+				e.SearchTotalMatches = total
+			}
+			if e.SelectedSearchFileIdx >= len(e.SearchResults) {
+				e.SelectedSearchFileIdx = 0
+			}
+			if len(e.SearchResults) > 0 && e.SelectedSearchFileIdx < len(e.SearchResults) {
+				if e.SelectedSearchMatchIdx >= len(e.SearchResults[e.SelectedSearchFileIdx].Matches) {
+					e.SelectedSearchMatchIdx = 0
+				}
+			} else {
+				e.SelectedSearchMatchIdx = 0
+			}
+			e.SearchSearching = false
+		}
+		e.SearchMutex.Unlock()
+
+		if e.Screen != nil {
+			e.Screen.PostEvent(tcell.NewEventInterrupt(nil))
+		}
+	}(ctx, query, opts, root)
+}
+
+func (e *Editor) drawGlobalSearchModal(width, height int) {
+	modalWidth := int(float64(width) * 0.88)
+	if modalWidth < 60 {
+		modalWidth = width - 4
+	}
+	if modalWidth < 40 {
+		modalWidth = width
+	}
+
+	modalHeight := int(float64(height) * 0.82)
+	if modalHeight < 14 {
+		modalHeight = height - 2
+	}
+	if modalHeight < 10 {
+		modalHeight = height
+	}
+
+	startX := (width - modalWidth) / 2
+	startY := (height - modalHeight) / 2
+	if startY < 1 {
+		startY = 1
+	}
+
+	boxStyle := e.Theme.StatusBarStyle
+	borderStyle := e.Theme.StatusBarStyle
+	inputStyle := e.Theme.DefaultStyle
+
+	// Fondo completo del modal
+	for dy := 0; dy < modalHeight; dy++ {
+		for dx := 0; dx < modalWidth; dx++ {
+			e.Screen.SetContent(startX+dx, startY+dy, ' ', nil, boxStyle)
+		}
+	}
+
+	// 1. Borde superior y Título
+	e.Screen.SetContent(startX, startY, '╭', nil, borderStyle)
+	for dx := 1; dx < modalWidth-1; dx++ {
+		e.Screen.SetContent(startX+dx, startY, '─', nil, borderStyle)
+	}
+	e.Screen.SetContent(startX+modalWidth-1, startY, '╮', nil, borderStyle)
+
+	title := " Buscar en Archivos del Proyecto "
+	e.drawString(startX+2, startY, title, e.Theme.GetSyntaxStyle("function").Bold(true))
+
+	// Indicador de estado en cabecera
+	e.SearchMutex.Lock()
+	searching := e.SearchSearching
+	searchErr := e.SearchError
+	totalMatches := e.SearchTotalMatches
+	totalFiles := len(e.SearchResults)
+	e.SearchMutex.Unlock()
+
+	var statusText string
+	if searching {
+		statusText = "[Buscando...]"
+	} else if searchErr != "" {
+		statusText = "[Patrón inválido]"
+	} else if strings.TrimSpace(e.PromptText) != "" {
+		statusText = fmt.Sprintf("[%d coincidencias en %d archivos]", totalMatches, totalFiles)
+	}
+	if statusText != "" && modalWidth > len([]rune(title))+len([]rune(statusText))+6 {
+		e.drawString(startX+modalWidth-len([]rune(statusText))-2, startY, statusText, e.Theme.GetSyntaxStyle("comment").Bold(true))
+	}
+
+	// 2. Fila de Input y Chips de configuración (Aa, .*, ~)
+	e.Screen.SetContent(startX, startY+1, '│', nil, borderStyle)
+	for dx := 1; dx < modalWidth-1; dx++ {
+		e.Screen.SetContent(startX+dx, startY+1, ' ', nil, inputStyle)
+	}
+
+	promptIcon := "> "
+	if e.SearchPanel == 0 {
+		e.drawString(startX+2, startY+1, promptIcon, e.Theme.GetSyntaxStyle("keyword").Bold(true))
+	} else {
+		e.drawString(startX+2, startY+1, promptIcon, e.Theme.LineNumberStyle)
+	}
+
+	chipFuzzy := "[~]"
+	chipRegex := "[.*]"
+	chipCase := "[Aa]"
+	chipsTotalLen := len(chipCase) + 1 + len(chipRegex) + 1 + len(chipFuzzy)
+	chipsStartX := startX + modalWidth - 1 - chipsTotalLen - 1
+
+	inputMaxLen := chipsStartX - (startX + 4) - 1
+	if inputMaxLen < 10 {
+		inputMaxLen = 10
+	}
+
+	dispQuery := e.PromptText
+	if len([]rune(dispQuery)) > inputMaxLen {
+		dispQuery = string([]rune(dispQuery)[len([]rune(dispQuery))-inputMaxLen:])
+	}
+	e.drawString(startX+4, startY+1, dispQuery, inputStyle)
+
+	// Dibujar Chips
+	activeChipStyle := e.Theme.SelectionStyle.Bold(true)
+	inactiveChipStyle := e.Theme.LineNumberStyle
+
+	caseStyle := inactiveChipStyle
+	if e.SearchCaseSensitive {
+		caseStyle = activeChipStyle
+	}
+	regexStyle := inactiveChipStyle
+	if e.SearchRegex {
+		regexStyle = activeChipStyle
+	}
+	fuzzyStyle := inactiveChipStyle
+	if e.SearchFuzzy {
+		fuzzyStyle = activeChipStyle
+	}
+
+	if chipsStartX > startX+5 {
+		e.drawString(chipsStartX, startY+1, chipCase, caseStyle)
+		e.drawString(chipsStartX+5, startY+1, chipRegex, regexStyle)
+		e.drawString(chipsStartX+10, startY+1, chipFuzzy, fuzzyStyle)
+	}
+
+	e.Screen.SetContent(startX+modalWidth-1, startY+1, '│', nil, borderStyle)
+
+	// 3. Separador horizontal con encabezados de columna
+	leftWidth := int(float64(modalWidth) * 0.36)
+	if leftWidth < 22 {
+		leftWidth = 22
+	}
+	if modalWidth-leftWidth < 28 {
+		leftWidth = modalWidth - 28
+	}
+	splitX := startX + leftWidth
+
+	e.Screen.SetContent(startX, startY+2, '├', nil, borderStyle)
+	for dx := 1; dx < modalWidth-1; dx++ {
+		if startX+dx == splitX {
+			e.Screen.SetContent(splitX, startY+2, '┬', nil, borderStyle)
+		} else {
+			e.Screen.SetContent(startX+dx, startY+2, '─', nil, borderStyle)
+		}
+	}
+	e.Screen.SetContent(startX+modalWidth-1, startY+2, '┤', nil, borderStyle)
+
+	filesLabel := fmt.Sprintf(" Archivos (%d) ", totalFiles)
+	filesLabelStyle := e.Theme.LineNumberStyle
+	if e.SearchPanel == 1 {
+		filesLabelStyle = e.Theme.GetSyntaxStyle("keyword").Bold(true)
+	}
+	if len([]rune(filesLabel)) < leftWidth-2 {
+		e.drawString(startX+2, startY+2, filesLabel, filesLabelStyle)
+	}
+
+	rightColWidth := modalWidth - leftWidth - 1
+	var selectedFileMatchesCount int
+	e.SearchMutex.Lock()
+	if e.SelectedSearchFileIdx < len(e.SearchResults) {
+		selectedFileMatchesCount = len(e.SearchResults[e.SelectedSearchFileIdx].Matches)
+	}
+	e.SearchMutex.Unlock()
+
+	matchesLabel := fmt.Sprintf(" Incidencias (%d) ", selectedFileMatchesCount)
+	matchesLabelStyle := e.Theme.LineNumberStyle
+	if e.SearchPanel == 2 {
+		matchesLabelStyle = e.Theme.GetSyntaxStyle("keyword").Bold(true)
+	}
+	if len([]rune(matchesLabel)) < rightColWidth-2 {
+		e.drawString(splitX+2, startY+2, matchesLabel, matchesLabelStyle)
+	}
+
+	// 4. Filas de Contenido
+	contentStartY := startY + 3
+	contentEndY := startY + modalHeight - 2
+	contentRows := contentEndY - contentStartY + 1
+
+	e.SearchMutex.Lock()
+	searchResults := make([]search.FileSearchResult, len(e.SearchResults))
+	copy(searchResults, e.SearchResults)
+	e.SearchMutex.Unlock()
+
+	if e.SelectedSearchFileIdx < e.SearchFilesScroll {
+		e.SearchFilesScroll = e.SelectedSearchFileIdx
+	}
+	if e.SelectedSearchFileIdx >= e.SearchFilesScroll+contentRows {
+		e.SearchFilesScroll = e.SelectedSearchFileIdx - contentRows + 1
+	}
+	if e.SearchFilesScroll < 0 {
+		e.SearchFilesScroll = 0
+	}
+
+	var currentMatches []search.MatchLocation
+	if len(searchResults) > 0 && e.SelectedSearchFileIdx < len(searchResults) {
+		currentMatches = searchResults[e.SelectedSearchFileIdx].Matches
+	}
+
+	if e.SelectedSearchMatchIdx < e.SearchMatchesScroll {
+		e.SearchMatchesScroll = e.SelectedSearchMatchIdx
+	}
+	if e.SelectedSearchMatchIdx >= e.SearchMatchesScroll+contentRows {
+		e.SearchMatchesScroll = e.SelectedSearchMatchIdx - contentRows + 1
+	}
+	if e.SearchMatchesScroll < 0 {
+		e.SearchMatchesScroll = 0
+	}
+
+	for row := 0; row < contentRows; row++ {
+		curY := contentStartY + row
+
+		e.Screen.SetContent(startX, curY, '│', nil, borderStyle)
+		e.Screen.SetContent(splitX, curY, '│', nil, borderStyle)
+		e.Screen.SetContent(startX+modalWidth-1, curY, '│', nil, borderStyle)
+
+		// 4a. RENDER ARCHIVO EN COLUMNA IZQUIERDA
+		fIdx := e.SearchFilesScroll + row
+		if fIdx < len(searchResults) {
+			res := searchResults[fIdx]
+			isSelected := (fIdx == e.SelectedSearchFileIdx)
+			rowStyle := boxStyle
+			if isSelected {
+				if e.SearchPanel == 1 {
+					rowStyle = e.Theme.SelectionStyle
+				} else {
+					rowStyle = e.Theme.StatusBarStyle.Bold(true)
+				}
+			}
+
+			for dx := 1; dx < leftWidth; dx++ {
+				e.Screen.SetContent(startX+dx, curY, ' ', nil, rowStyle)
+			}
+
+			countBadge := fmt.Sprintf("(%d)", len(res.Matches))
+			badgeLen := len(countBadge)
+
+			maxPathLen := leftWidth - badgeLen - 4
+			if maxPathLen < 5 {
+				maxPathLen = 5
+			}
+
+			dispRelPath := res.RelPath
+			if len([]rune(dispRelPath)) > maxPathLen {
+				dispRelPath = "…" + string([]rune(dispRelPath)[len([]rune(dispRelPath))-(maxPathLen-1):])
+			}
+
+			prefix := "  "
+			if isSelected {
+				prefix = "▶ "
+			}
+
+			e.drawString(startX+1, curY, prefix+dispRelPath, rowStyle)
+			badgeStyle := e.Theme.GetSyntaxStyle("number")
+			if isSelected && e.SearchPanel == 1 {
+				badgeStyle = rowStyle.Bold(true)
+			}
+			e.drawString(splitX-badgeLen-1, curY, countBadge, badgeStyle)
+		} else {
+			for dx := 1; dx < leftWidth; dx++ {
+				e.Screen.SetContent(startX+dx, curY, ' ', nil, boxStyle)
+			}
+			if len(searchResults) == 0 && row == 0 {
+				emptyMsg := "(Sin resultados)"
+				if strings.TrimSpace(e.PromptText) == "" {
+					emptyMsg = "Escribe para buscar..."
+				}
+				e.drawString(startX+2, curY, emptyMsg, e.Theme.LineNumberStyle)
+			}
+		}
+
+		// 4b. RENDER INCIDENCIA EN COLUMNA DERECHA
+		mIdx := e.SearchMatchesScroll + row
+		rightInnerWidth := modalWidth - leftWidth - 2
+		if mIdx < len(currentMatches) {
+			match := currentMatches[mIdx]
+			isSelectedMatch := (mIdx == e.SelectedSearchMatchIdx)
+			mRowStyle := boxStyle
+			if isSelectedMatch {
+				if e.SearchPanel == 2 {
+					mRowStyle = e.Theme.SelectionStyle
+				} else {
+					mRowStyle = e.Theme.StatusBarStyle.Bold(true)
+				}
+			}
+
+			for dx := splitX + 1; dx < startX+modalWidth-1; dx++ {
+				e.Screen.SetContent(dx, curY, ' ', nil, mRowStyle)
+			}
+
+			lineBadge := fmt.Sprintf(" L%-4d ", match.LineNum)
+			badgeStyle := e.Theme.GetSyntaxStyle("comment")
+			if isSelectedMatch && e.SearchPanel == 2 {
+				badgeStyle = mRowStyle.Bold(true)
+			}
+			e.drawString(splitX+1, curY, lineBadge, badgeStyle)
+
+			snippetStartX := splitX + 1 + len(lineBadge)
+			availSnippetWidth := rightInnerWidth - len(lineBadge) - 1
+			if availSnippetWidth > 0 {
+				lineRunes := []rune(match.LineText)
+				colStart := match.ColStart
+				colEnd := match.ColEnd
+				if colStart < 0 {
+					colStart = 0
+				}
+				if colEnd > len(lineRunes) {
+					colEnd = len(lineRunes)
+				}
+
+				offset := 0
+				if colStart > availSnippetWidth/2 {
+					offset = colStart - availSnippetWidth/3
+					if offset < 0 {
+						offset = 0
+					}
+				}
+
+				for sCol := 0; sCol < availSnippetWidth; sCol++ {
+					runeIdx := offset + sCol
+					if runeIdx >= len(lineRunes) {
+						break
+					}
+					ch := lineRunes[runeIdx]
+					if ch == '\t' {
+						ch = ' '
+					}
+
+					chStyle := mRowStyle
+					if runeIdx >= colStart && runeIdx < colEnd {
+						chStyle = e.Theme.GetSyntaxStyle("keyword").Bold(true)
+					}
+					e.Screen.SetContent(snippetStartX+sCol, curY, ch, nil, chStyle)
+				}
+			}
+		} else {
+			for dx := splitX + 1; dx < startX+modalWidth-1; dx++ {
+				e.Screen.SetContent(dx, curY, ' ', nil, boxStyle)
+			}
+			if len(currentMatches) == 0 && row == 0 && len(searchResults) > 0 {
+				e.drawString(splitX+2, curY, "(Sin incidencias en archivo)", e.Theme.LineNumberStyle)
+			}
+		}
+	}
+
+	// 5. Borde inferior con leyenda de atajos
+	bottomY := startY + modalHeight - 1
+	e.Screen.SetContent(startX, bottomY, '╰', nil, borderStyle)
+	for dx := 1; dx < modalWidth-1; dx++ {
+		if startX+dx == splitX {
+			e.Screen.SetContent(splitX, bottomY, '┴', nil, borderStyle)
+		} else {
+			e.Screen.SetContent(startX+dx, bottomY, '─', nil, borderStyle)
+		}
+	}
+	e.Screen.SetContent(startX+modalWidth-1, bottomY, '╯', nil, borderStyle)
+
+	footerText := " [Tab alternar foco | ↑/↓ navegar | ↵ abrir | Alt+C/R/Z opciones | Esc cerrar] "
+	if modalWidth > len([]rune(footerText))+4 {
+		footerX := startX + (modalWidth-len([]rune(footerText)))/2
+		e.drawString(footerX, bottomY, footerText, e.Theme.LineNumberStyle)
+	}
+
+	if e.SearchPanel == 0 {
+		cursorX := startX + 4 + len([]rune(dispQuery))
+		if cursorX >= chipsStartX {
+			cursorX = chipsStartX - 1
+		}
+		e.PromptCursor = cursorX
+		e.Screen.ShowCursor(e.PromptCursor, startY+1)
+	} else {
+		e.Screen.HideCursor()
+	}
+}
+
+func (e *Editor) handleGlobalSearchMouse(mx, my int) {
+	width, height := e.Screen.Size()
+	modalWidth := int(float64(width) * 0.88)
+	if modalWidth < 60 {
+		modalWidth = width - 4
+	}
+	if modalWidth < 40 {
+		modalWidth = width
+	}
+	modalHeight := int(float64(height) * 0.82)
+	if modalHeight < 14 {
+		modalHeight = height - 2
+	}
+	if modalHeight < 10 {
+		modalHeight = height
+	}
+	startX := (width - modalWidth) / 2
+	startY := (height - modalHeight) / 2
+	if startY < 1 {
+		startY = 1
+	}
+
+	if mx < startX || mx >= startX+modalWidth || my < startY || my >= startY+modalHeight {
+		e.SearchMutex.Lock()
+		if e.SearchCancelFunc != nil {
+			e.SearchCancelFunc()
+			e.SearchCancelFunc = nil
+		}
+		e.PromptMode = PromptNone
+		e.SearchMutex.Unlock()
+		return
+	}
+
+	if my == startY+1 {
+		chipFuzzy := "[~]"
+		chipRegex := "[.*]"
+		chipCase := "[Aa]"
+		chipsTotalLen := len(chipCase) + 1 + len(chipRegex) + 1 + len(chipFuzzy)
+		chipsStartX := startX + modalWidth - 1 - chipsTotalLen - 1
+
+		if mx >= chipsStartX && mx < chipsStartX+4 {
+			e.SearchCaseSensitive = !e.SearchCaseSensitive
+			e.triggerGlobalSearchAsync()
+			return
+		} else if mx >= chipsStartX+5 && mx < chipsStartX+9 {
+			e.SearchRegex = !e.SearchRegex
+			e.triggerGlobalSearchAsync()
+			return
+		} else if mx >= chipsStartX+10 && mx < chipsStartX+13 {
+			e.SearchFuzzy = !e.SearchFuzzy
+			e.triggerGlobalSearchAsync()
+			return
+		} else {
+			e.SearchPanel = 0
+			return
+		}
+	}
+
+	if my <= startY+2 || my >= startY+modalHeight-1 {
+		return
+	}
+
+	leftWidth := int(float64(modalWidth) * 0.36)
+	if leftWidth < 22 {
+		leftWidth = 22
+	}
+	if modalWidth-leftWidth < 28 {
+		leftWidth = modalWidth - 28
+	}
+	splitX := startX + leftWidth
+
+	contentStartY := startY + 3
+	clickedRow := my - contentStartY
+
+	if mx < splitX {
+		e.SearchPanel = 1
+		targetIdx := e.SearchFilesScroll + clickedRow
+		e.SearchMutex.Lock()
+		if targetIdx >= 0 && targetIdx < len(e.SearchResults) {
+			e.SelectedSearchFileIdx = targetIdx
+			e.SelectedSearchMatchIdx = 0
+			e.SearchMatchesScroll = 0
+		}
+		e.SearchMutex.Unlock()
+	} else if mx > splitX {
+		e.SearchPanel = 2
+		e.SearchMutex.Lock()
+		if e.SelectedSearchFileIdx < len(e.SearchResults) {
+			matches := e.SearchResults[e.SelectedSearchFileIdx].Matches
+			targetIdx := e.SearchMatchesScroll + clickedRow
+			if targetIdx >= 0 && targetIdx < len(matches) {
+				e.SelectedSearchMatchIdx = targetIdx
+			}
+		}
+		e.SearchMutex.Unlock()
+	}
+}
+
+func (e *Editor) handleGlobalSearchKey(ev *tcell.EventKey) {
+	if ev.Key() == tcell.KeyEscape {
+		e.SearchMutex.Lock()
+		if e.SearchCancelFunc != nil {
+			e.SearchCancelFunc()
+			e.SearchCancelFunc = nil
+		}
+		e.PromptMode = PromptNone
+		e.SearchMutex.Unlock()
+		return
+	}
+
+	if ev.Modifiers()&tcell.ModAlt != 0 && ev.Key() == tcell.KeyRune {
+		r := ev.Rune()
+		if r == 'c' || r == 'C' {
+			e.SearchCaseSensitive = !e.SearchCaseSensitive
+			e.triggerGlobalSearchAsync()
+			return
+		}
+		if r == 'r' || r == 'R' {
+			e.SearchRegex = !e.SearchRegex
+			e.triggerGlobalSearchAsync()
+			return
+		}
+		if r == 'z' || r == 'Z' {
+			e.SearchFuzzy = !e.SearchFuzzy
+			e.triggerGlobalSearchAsync()
+			return
+		}
+	}
+
+	if ev.Key() == tcell.KeyTab {
+		e.SearchPanel = (e.SearchPanel + 1) % 3
+		return
+	}
+	if ev.Key() == tcell.KeyBacktab {
+		e.SearchPanel = (e.SearchPanel + 2) % 3
+		return
+	}
+
+	if ev.Key() == tcell.KeyEnter {
+		e.SearchMutex.Lock()
+		if len(e.SearchResults) > 0 && e.SelectedSearchFileIdx < len(e.SearchResults) {
+			res := e.SearchResults[e.SelectedSearchFileIdx]
+			targetPath := res.Path
+			var targetLine, targetCol int
+			if len(res.Matches) > 0 {
+				mIdx := e.SelectedSearchMatchIdx
+				if mIdx >= len(res.Matches) {
+					mIdx = 0
+				}
+				targetLine = res.Matches[mIdx].LineNum
+				targetCol = res.Matches[mIdx].ColStart
+			}
+			if e.SearchCancelFunc != nil {
+				e.SearchCancelFunc()
+				e.SearchCancelFunc = nil
+			}
+			e.PromptMode = PromptNone
+			e.SearchMutex.Unlock()
+
+			e.OpenFile(targetPath)
+			if targetLine > 0 && e.Buffer != nil {
+				e.Buffer.CursorRow = targetLine - 1
+				e.Buffer.CursorCol = targetCol
+				e.Buffer.ClampCursor()
+				_, h := e.Screen.Size()
+				editorH := h - 2
+				if editorH > 4 {
+					e.Buffer.ScrollRow = e.Buffer.CursorRow - editorH/2
+					if e.Buffer.ScrollRow < 0 {
+						e.Buffer.ScrollRow = 0
+					}
+				}
+			}
+			return
+		}
+		e.SearchMutex.Unlock()
+		return
+	}
+
+	switch e.SearchPanel {
+	case 0:
+		if ev.Key() == tcell.KeyDown {
+			e.SearchMutex.Lock()
+			if len(e.SearchResults) > 0 {
+				e.SearchPanel = 1
+			}
+			e.SearchMutex.Unlock()
+			return
+		}
+		if ev.Key() == tcell.KeyBackspace || ev.Key() == tcell.KeyBackspace2 {
+			if len([]rune(e.PromptText)) > 0 {
+				runes := []rune(e.PromptText)
+				e.PromptText = string(runes[:len(runes)-1])
+				e.triggerGlobalSearchAsync()
+			}
+			return
+		}
+		if ev.Key() == tcell.KeyCtrlU {
+			e.PromptText = ""
+			e.triggerGlobalSearchAsync()
+			return
+		}
+		if ev.Key() == tcell.KeyRune {
+			e.PromptText += string(ev.Rune())
+			e.triggerGlobalSearchAsync()
+			return
+		}
+
+	case 1:
+		switch ev.Key() {
+		case tcell.KeyUp:
+			e.SearchMutex.Lock()
+			if e.SelectedSearchFileIdx > 0 {
+				e.SelectedSearchFileIdx--
+				e.SelectedSearchMatchIdx = 0
+				e.SearchMatchesScroll = 0
+			} else {
+				e.SearchPanel = 0
+			}
+			e.SearchMutex.Unlock()
+			return
+		case tcell.KeyDown:
+			e.SearchMutex.Lock()
+			if e.SelectedSearchFileIdx < len(e.SearchResults)-1 {
+				e.SelectedSearchFileIdx++
+				e.SelectedSearchMatchIdx = 0
+				e.SearchMatchesScroll = 0
+			}
+			e.SearchMutex.Unlock()
+			return
+		case tcell.KeyRight:
+			e.SearchMutex.Lock()
+			if len(e.SearchResults) > 0 && e.SelectedSearchFileIdx < len(e.SearchResults) {
+				if len(e.SearchResults[e.SelectedSearchFileIdx].Matches) > 0 {
+					e.SearchPanel = 2
+				}
+			}
+			e.SearchMutex.Unlock()
+			return
+		case tcell.KeyPgUp:
+			e.SearchMutex.Lock()
+			e.SelectedSearchFileIdx -= 5
+			if e.SelectedSearchFileIdx < 0 {
+				e.SelectedSearchFileIdx = 0
+			}
+			e.SelectedSearchMatchIdx = 0
+			e.SearchMatchesScroll = 0
+			e.SearchMutex.Unlock()
+			return
+		case tcell.KeyPgDn:
+			e.SearchMutex.Lock()
+			e.SelectedSearchFileIdx += 5
+			if e.SelectedSearchFileIdx >= len(e.SearchResults) {
+				e.SelectedSearchFileIdx = len(e.SearchResults) - 1
+			}
+			if e.SelectedSearchFileIdx < 0 {
+				e.SelectedSearchFileIdx = 0
+			}
+			e.SelectedSearchMatchIdx = 0
+			e.SearchMatchesScroll = 0
+			e.SearchMutex.Unlock()
+			return
+		case tcell.KeyBackspace, tcell.KeyBackspace2:
+			e.SearchPanel = 0
+			if len([]rune(e.PromptText)) > 0 {
+				runes := []rune(e.PromptText)
+				e.PromptText = string(runes[:len(runes)-1])
+				e.triggerGlobalSearchAsync()
+			}
+			return
+		case tcell.KeyRune:
+			e.SearchPanel = 0
+			e.PromptText += string(ev.Rune())
+			e.triggerGlobalSearchAsync()
+			return
+		}
+
+	case 2:
+		switch ev.Key() {
+		case tcell.KeyUp:
+			e.SearchMutex.Lock()
+			if e.SelectedSearchMatchIdx > 0 {
+				e.SelectedSearchMatchIdx--
+			} else {
+				e.SearchPanel = 0
+			}
+			e.SearchMutex.Unlock()
+			return
+		case tcell.KeyDown:
+			e.SearchMutex.Lock()
+			if e.SelectedSearchFileIdx < len(e.SearchResults) {
+				matches := e.SearchResults[e.SelectedSearchFileIdx].Matches
+				if e.SelectedSearchMatchIdx < len(matches)-1 {
+					e.SelectedSearchMatchIdx++
+				}
+			}
+			e.SearchMutex.Unlock()
+			return
+		case tcell.KeyLeft:
+			e.SearchPanel = 1
+			return
+		case tcell.KeyPgUp:
+			e.SearchMutex.Lock()
+			e.SelectedSearchMatchIdx -= 5
+			if e.SelectedSearchMatchIdx < 0 {
+				e.SelectedSearchMatchIdx = 0
+			}
+			e.SearchMutex.Unlock()
+			return
+		case tcell.KeyPgDn:
+			e.SearchMutex.Lock()
+			if e.SelectedSearchFileIdx < len(e.SearchResults) {
+				matches := e.SearchResults[e.SelectedSearchFileIdx].Matches
+				e.SelectedSearchMatchIdx += 5
+				if e.SelectedSearchMatchIdx >= len(matches) {
+					e.SelectedSearchMatchIdx = len(matches) - 1
+				}
+				if e.SelectedSearchMatchIdx < 0 {
+					e.SelectedSearchMatchIdx = 0
+				}
+			}
+			e.SearchMutex.Unlock()
+			return
+		case tcell.KeyBackspace, tcell.KeyBackspace2:
+			e.SearchPanel = 0
+			if len([]rune(e.PromptText)) > 0 {
+				runes := []rune(e.PromptText)
+				e.PromptText = string(runes[:len(runes)-1])
+				e.triggerGlobalSearchAsync()
+			}
+			return
+		case tcell.KeyRune:
+			e.SearchPanel = 0
+			e.PromptText += string(ev.Rune())
+			e.triggerGlobalSearchAsync()
+			return
+		}
+	}
+}
+

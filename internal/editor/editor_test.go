@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"edi/internal/buffer"
 	"edi/internal/config"
@@ -575,6 +576,147 @@ func TestSidebarPositionLeftRight(t *testing.T) {
 	ed.handleMouseClick(70, 2)
 	if !ed.SidebarFocus {
 		t.Errorf("se esperaba que el clic en x=70 enfocara el sidebar a la derecha")
+	}
+}
+
+func TestGlobalSearchModalOpenAndNavigate(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("error inicializando pantalla de simulación: %v", err)
+	}
+	defer screen.Fini()
+	screen.SetSize(100, 30)
+
+	tmpDir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmpDir, "file1.go"), []byte("package main\n\nfunc MySpecialTarget() {\n}\n"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "file2.go"), []byte("// MySpecialTarget reference\nvar MySpecialTarget = 10\n"), 0644)
+
+	buf := buffer.NewEmptyBuffer()
+	cfg := config.DefaultConfig()
+	ed, err := NewEditor(screen, buf, &cfg)
+	if err != nil {
+		t.Fatalf("error creando editor: %v", err)
+	}
+
+	ed.OpenFolder(tmpDir)
+
+	// 1. Abrir modal via shortcut chord Alt+F o acción
+	ed.handleNormalKey(tcell.NewEventKey(tcell.KeyRune, 'f', tcell.ModAlt))
+	if ed.PromptMode != PromptGlobalSearch {
+		t.Fatalf("se esperaba PromptMode == PromptGlobalSearch, obtenido %v", ed.PromptMode)
+	}
+
+	// 2. Escribir texto de búsqueda "MySpecialTarget"
+	for _, ch := range "MySpecialTarget" {
+		ed.HandleEvent(tcell.NewEventKey(tcell.KeyRune, ch, 0))
+	}
+
+	// Esperar ejecución asíncrona del debounce
+	time.Sleep(150 * time.Millisecond)
+
+	ed.SearchMutex.Lock()
+	matchesCount := ed.SearchTotalMatches
+	filesCount := len(ed.SearchResults)
+	ed.SearchMutex.Unlock()
+
+	if matchesCount < 2 || filesCount < 2 {
+		t.Fatalf("se esperaban al menos 2 matches en 2 archivos, obtenidos %d en %d", matchesCount, filesCount)
+	}
+
+	// 3. Renderizar modal
+	ed.Draw()
+
+	// 4. Navegar entre paneles con Tab
+	ed.HandleEvent(tcell.NewEventKey(tcell.KeyTab, 0, 0))
+	if ed.SearchPanel != 1 {
+		t.Errorf("se esperaba foco en panel 1 (archivos), obtenido %d", ed.SearchPanel)
+	}
+
+	ed.HandleEvent(tcell.NewEventKey(tcell.KeyTab, 0, 0))
+	if ed.SearchPanel != 2 {
+		t.Errorf("se esperaba foco en panel 2 (incidencias), obtenido %d", ed.SearchPanel)
+	}
+
+	ed.HandleEvent(tcell.NewEventKey(tcell.KeyTab, 0, 0))
+	if ed.SearchPanel != 0 {
+		t.Errorf("se esperaba foco en panel 0 (input), obtenido %d", ed.SearchPanel)
+	}
+
+	// 5. Flecha abajo desde input enfoca panel 1
+	ed.HandleEvent(tcell.NewEventKey(tcell.KeyDown, 0, 0))
+	if ed.SearchPanel != 1 {
+		t.Errorf("se esperaba que KeyDown cambiara foco a panel 1, obtenido %d", ed.SearchPanel)
+	}
+
+	// 6. Flecha derecha cambia a panel 2 (incidencias)
+	ed.HandleEvent(tcell.NewEventKey(tcell.KeyRight, 0, 0))
+	if ed.SearchPanel != 2 {
+		t.Errorf("se esperaba que KeyRight cambiara foco a panel 2, obtenido %d", ed.SearchPanel)
+	}
+
+	// 7. Flecha izquierda regresa a panel 1
+	ed.HandleEvent(tcell.NewEventKey(tcell.KeyLeft, 0, 0))
+	if ed.SearchPanel != 1 {
+		t.Errorf("se esperaba que KeyLeft cambiara foco a panel 1, obtenido %d", ed.SearchPanel)
+	}
+
+	// 8. Enter abre el archivo seleccionado y posiciona el cursor
+	ed.HandleEvent(tcell.NewEventKey(tcell.KeyEnter, 0, 0))
+	if ed.PromptMode != PromptNone {
+		t.Errorf("se esperaba que Enter cerrara el modal, obtenido %v", ed.PromptMode)
+	}
+	if ed.Buffer.FilePath == "" {
+		t.Errorf("se esperaba que se abriera un archivo en el buffer activo")
+	}
+}
+
+func TestGlobalSearchOptionsToggleAndMouse(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("error inicializando pantalla de simulación: %v", err)
+	}
+	defer screen.Fini()
+	screen.SetSize(100, 30)
+
+	tmpDir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("CaseText\ncasetext\n"), 0644)
+
+	buf := buffer.NewEmptyBuffer()
+	cfg := config.DefaultConfig()
+	ed, err := NewEditor(screen, buf, &cfg)
+	if err != nil {
+		t.Fatalf("error creando editor: %v", err)
+	}
+	ed.OpenFolder(tmpDir)
+
+	ed.openGlobalSearchModal()
+
+	// Probar toggles de atajos Alt+C, Alt+R, Alt+Z
+	ed.HandleEvent(tcell.NewEventKey(tcell.KeyRune, 'c', tcell.ModAlt))
+	if !ed.SearchCaseSensitive {
+		t.Errorf("se esperaba SearchCaseSensitive == true")
+	}
+
+	ed.HandleEvent(tcell.NewEventKey(tcell.KeyRune, 'r', tcell.ModAlt))
+	if !ed.SearchRegex {
+		t.Errorf("se esperaba SearchRegex == true")
+	}
+
+	ed.HandleEvent(tcell.NewEventKey(tcell.KeyRune, 'z', tcell.ModAlt))
+	if !ed.SearchFuzzy {
+		t.Errorf("se esperaba SearchFuzzy == true")
+	}
+
+	// Probar toggle de vuelta
+	ed.HandleEvent(tcell.NewEventKey(tcell.KeyRune, 'c', tcell.ModAlt))
+	if ed.SearchCaseSensitive {
+		t.Errorf("se esperaba SearchCaseSensitive == false")
+	}
+
+	// Probar clic de mouse para cerrar fuera del modal (x=0, y=0)
+	ed.handleMouseClick(0, 0)
+	if ed.PromptMode != PromptNone {
+		t.Errorf("se esperaba que clic fuera del modal lo cerrara")
 	}
 }
 
