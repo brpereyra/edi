@@ -1,7 +1,7 @@
 .PHONY: build test clean cross-compile install
 
 BINARY_NAME=edi
-VERSION?=v0.1.0
+VERSION?=v0.2.0
 LDFLAGS=-s -w -X edi/internal/version.Version=$(VERSION)
 
 build:

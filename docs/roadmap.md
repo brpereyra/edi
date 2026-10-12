@@ -4,7 +4,7 @@ Este documento traza la evolución, hitos completados y la visión a futuro para
 
 ---
 
-## Estado Actual: v0.1.0 (Completado)
+## Estado Actual: v0.2.0 (Completado)
 
 El núcleo de `edi` se encuentra completamente operativo como editor estático de grado de producción:
 
